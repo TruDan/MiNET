@@ -1,7 +1,37 @@
-﻿using System.Numerics;
+﻿#region LICENSE
+
+// The contents of this file are subject to the Common Public Attribution
+// License Version 1.0. (the "License"); you may not use this file except in
+// compliance with the License. You may obtain a copy of the License at
+// https://github.com/NiclasOlofsson/MiNET/blob/master/LICENSE. 
+// The License is based on the Mozilla Public License Version 1.1, but Sections 14 
+// and 15 have been added to cover use of software over a computer network and 
+// provide for limited attribution for the Original Developer. In addition, Exhibit A has 
+// been modified to be consistent with Exhibit B.
+// 
+// Software distributed under the License is distributed on an "AS IS" basis,
+// WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License for
+// the specific language governing rights and limitations under the License.
+// 
+// The Original Code is MiNET.
+// 
+// The Original Developer is the Initial Developer.  The Initial Developer of
+// the Original Code is Niclas Olofsson.
+// 
+// All portions of the code written by Niclas Olofsson are Copyright (c) 2014-2018 Niclas Olofsson. 
+// All Rights Reserved.
+
+#endregion
+
+using System;
+using System.Numerics;
 using fNbt;
+using MiNET.BlockEntities;
+using MiNET.Blocks;
+using MiNET.Entities;
 using MiNET.Utils;
 using MiNET.Worlds;
+using Newtonsoft.Json;
 
 namespace MiNET.Items
 {
@@ -12,33 +42,72 @@ namespace MiNET.Items
 	///     frames, which turn into an entity when placed, and beds, which turn into a group of blocks when placed. When
 	///     equipped, items (and blocks) briefly display their names above the HUD.
 	/// </summary>
-	public class Item
+	public class Item : ICloneable
 	{
 		public short Id { get; protected set; }
 		public short Metadata { get; set; }
 		public byte Count { get; set; }
-		public NbtCompound ExtraData { get; set; }
+		public virtual NbtCompound ExtraData { get; set; }
 
-		public ItemMaterial ItemMaterial { get; set; } = ItemMaterial.None;
-		public ItemType ItemType { get; set; } = ItemType.Item;
-		public int MaxStackSize { get; set; } = 64;
-		public bool IsStackable => MaxStackSize > 1;
-		public int Durability { get; set; }
-		public int FuelEfficiency { get; set; }
+		[JsonIgnore] public ItemMaterial ItemMaterial { get; set; } = ItemMaterial.None;
 
-		protected internal Item(short id, short metadata = 0, byte count = 1)
+		[JsonIgnore] public ItemType ItemType { get; set; } = ItemType.Item;
+
+		[JsonIgnore] public int MaxStackSize { get; set; } = 64;
+
+		[JsonIgnore] public bool IsStackable => MaxStackSize > 1;
+
+		[JsonIgnore] public int Durability { get; set; }
+
+		[JsonIgnore] public int FuelEfficiency { get; set; }
+
+		protected internal Item(short id, short metadata = 0, int count = 1)
 		{
 			Id = id;
 			Metadata = metadata;
-			Count = count;
+			Count = (byte) count;
 		}
 
 		public virtual void UseItem(Level world, Player player, BlockCoordinates blockCoordinates)
 		{
 		}
 
-		public virtual void UseItem(Level world, Player player, BlockCoordinates blockCoordinates, BlockFace face, Vector3 faceCoords)
+		public virtual void PlaceBlock(Level world, Player player, BlockCoordinates blockCoordinates, BlockFace face, Vector3 faceCoords)
 		{
+		}
+
+		public virtual bool BreakBlock(Level world, Player player, Block block, BlockEntity blockEntity)
+		{
+			return true;
+		}
+
+		public virtual bool DamageItem(Player player, ItemDamageReason reason, Entity target, Block block)
+		{
+			return false;
+		}
+
+		protected virtual int GetMaxUses()
+		{
+			switch (ItemMaterial)
+			{
+				case ItemMaterial.Wood:
+					return 60;
+				case ItemMaterial.Gold:
+					return 33;
+				case ItemMaterial.Stone:
+					return 132;
+				case ItemMaterial.Iron:
+					return 251;
+				case ItemMaterial.Diamond:
+					return 1562;
+				default:
+					return 0;
+			}
+		}
+
+		public virtual bool Animate(Level world, Player player)
+		{
+			return false;
 		}
 
 		public BlockCoordinates GetNewCoordinatesFromFace(BlockCoordinates target, BlockFace face)
@@ -49,14 +118,14 @@ namespace MiNET.Items
 					return target + Level.Down;
 				case BlockFace.Up:
 					return target + Level.Up;
-				case BlockFace.East:
-					return target + Level.East;
+				case BlockFace.North:
+					return target + Level.North;
+				case BlockFace.South:
+					return target + Level.South;
 				case BlockFace.West:
 					return target + Level.West;
-				case BlockFace.North:
-					return target + Level.South;
-				case BlockFace.South:
-					return target + Level.North;
+				case BlockFace.East:
+					return target + Level.East;
 				default:
 					return target;
 			}
@@ -145,24 +214,34 @@ namespace MiNET.Items
 			}
 		}
 
+		public object Clone()
+		{
+			return MemberwiseClone();
+		}
+
 		public override string ToString()
 		{
 			return $"Type={GetType().Name}, Id={Id}, Metadata={Metadata}, Count={Count}, ExtraData={ExtraData}";
+		}
+
+		public bool Interact(Level level, Player player, Entity target)
+		{
+			return false; // Not handled
 		}
 	}
 
 	public enum ItemMaterial
 	{
-		None = 1,
-		Wood = 2,
-		Stone = 4,
-		Iron = 6,
-		Diamond = 8,
-		Gold = 12,
-
 		//Armor Only
 		Leather = -2,
 		Chain = -1,
+
+		None = 0,
+		Wood = 1,
+		Stone = 2,
+		Gold = 3,
+		Iron = 4,
+		Diamond = 5,
 	}
 
 	public enum ItemType
@@ -180,5 +259,14 @@ namespace MiNET.Items
 		Chestplate,
 		Leggings,
 		Boots
+	}
+
+	public enum ItemDamageReason
+	{
+		BlockBreak,
+		BlockInteract,
+		EntityAttack,
+		EntityInteract,
+		ItemUse,
 	}
 }

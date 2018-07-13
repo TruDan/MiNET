@@ -7,8 +7,9 @@ namespace MiNET
 	{
 		void Close();
 
-		void SendPackage(Package package);
-		void SendDirectPackage(Package package);
+		void SendPacket(Packet packet);
+		void SendDirectPacket(Packet packet);
 		IPEndPoint GetClientEndPoint();
+		long GetNetworkNetworkIdentifier();
 	}
 }

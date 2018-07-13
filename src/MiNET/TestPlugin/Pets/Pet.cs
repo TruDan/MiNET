@@ -15,7 +15,6 @@ namespace TestPlugin.Pets
 		public Player Owner { get; set; }
 		public Player AttackTarget { get; set; }
 		public int Age { get; set; }
-		public bool IsBaby { get; set; }
 		public bool IsInRage { get; set; }
 		public int RageTick { get; set; }
 
@@ -28,7 +27,7 @@ namespace TestPlugin.Pets
 			Age = 0;
 		}
 
-		public override void OnTick()
+		public override void OnTick(Entity[] entities)
 		{
 			if (Age++ < 100) return;
 			if (!IsSpawned) return;
@@ -40,7 +39,7 @@ namespace TestPlugin.Pets
 				return;
 			}
 
-			base.OnTick();
+			base.OnTick(entities);
 
 			if (RageTick > 0)
 			{

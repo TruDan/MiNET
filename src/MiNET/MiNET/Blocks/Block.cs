@@ -1,5 +1,34 @@
-﻿using System.Numerics;
+﻿#region LICENSE
+
+// The contents of this file are subject to the Common Public Attribution
+// License Version 1.0. (the "License"); you may not use this file except in
+// compliance with the License. You may obtain a copy of the License at
+// https://github.com/NiclasOlofsson/MiNET/blob/master/LICENSE. 
+// The License is based on the Mozilla Public License Version 1.1, but Sections 14 
+// and 15 have been added to cover use of software over a computer network and 
+// provide for limited attribution for the Original Developer. In addition, Exhibit A has 
+// been modified to be consistent with Exhibit B.
+// 
+// Software distributed under the License is distributed on an "AS IS" basis,
+// WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License for
+// the specific language governing rights and limitations under the License.
+// 
+// The Original Code is MiNET.
+// 
+// The Original Developer is the Initial Developer.  The Initial Developer of
+// the Original Code is Niclas Olofsson.
+// 
+// All portions of the code written by Niclas Olofsson are Copyright (c) 2014-2018 Niclas Olofsson. 
+// All Rights Reserved.
+
+#endregion
+
+using System;
+using System.Linq;
+using System.Numerics;
+using log4net;
 using MiNET.Items;
+using MiNET.Particles;
 using MiNET.Utils;
 using MiNET.Worlds;
 
@@ -9,98 +38,105 @@ namespace MiNET.Blocks
 	///     Blocks are the basic units of structure in Minecraft. Together, they build up the in-game environment and can be
 	///     mined and utilized in various fashions.
 	/// </summary>
-	public class Block
+	public class Block : ICloneable
 	{
+		private static readonly ILog Log = LogManager.GetLogger(typeof(Block));
+
 		public BlockCoordinates Coordinates { get; set; }
-		public byte Id { get; protected set; }
+		public int Id { get; }
 		public byte Metadata { get; set; }
 
-		public float Hardness { get; protected set; }
-		public float BlastResistance { get; protected set; }
-		public short FuelEfficiency { get; protected set; }
-		public float FrictionFactor { get; protected set; }
-		public int LightLevel { get; protected set; }
+		public string Name { get; set; }
 
-		public bool IsReplacible { get; protected set; }
-		public bool IsSolid { get; protected set; }
-		public bool IsBuildable { get; protected set; }
-		public bool IsTransparent { get; protected set; }
-		public bool IsFlammable { get; protected set; }
+		public float Hardness { get; protected set; } = 0;
+		public float BlastResistance { get; protected set; } = 0;
+		public short FuelEfficiency { get; protected set; } = 0;
+		public float FrictionFactor { get; protected set; } = 0.6f;
+		public int LightLevel { get; set; } = 0;
 
-		public Block(byte id)
+		public bool IsReplacible { get; protected set; } = false;
+		public bool IsSolid { get; protected set; } = true;
+		public bool IsBuildable { get; protected set; } = true;
+		public bool IsTransparent { get; protected set; } = false;
+		public bool IsFlammable { get; protected set; } = false;
+		public bool IsBlockingSkylight { get; protected set; } = true;
+
+		public byte BlockLight { get; set; }
+		public byte SkyLight { get; set; }
+
+		public byte BiomeId { get; set; }
+
+		public Block(int id)
 		{
 			Id = id;
-
-			IsSolid = true;
-			IsBuildable = true;
-			IsReplacible = false;
-			IsTransparent = false;
-			IsFlammable = false;
-
-			Hardness = 0;
-			BlastResistance = 0;
-			FuelEfficiency = 0;
-			FrictionFactor = 0.6f;
-			LightLevel = 0;
 		}
 
-		public bool CanPlace(Level world, BlockFace face)
+		public uint GetRuntimeId() => BlockFactory.GetRuntimeId(Id, Metadata);
+
+		public bool CanPlace(Level world, Player player, BlockCoordinates targetCoordinates, BlockFace face)
 		{
-			return CanPlace(world, Coordinates, face);
+			return CanPlace(world, player, Coordinates, targetCoordinates, face);
 		}
 
-		protected virtual bool CanPlace(Level world, BlockCoordinates blockCoordinates, BlockFace face)
+		protected virtual bool CanPlace(Level world, Player player, BlockCoordinates blockCoordinates, BlockCoordinates targetCoordinates, BlockFace face)
 		{
+			var playerBbox = (player.GetBoundingBox() - 0.01f);
+			var blockBbox = GetBoundingBox();
+			if (playerBbox.Intersects(blockBbox))
+			{
+				Log.Debug($"Player bbox={playerBbox}, block bbox={blockBbox}, intersects={playerBbox.Intersects(blockBbox)}");
+				Log.Debug($"Can't build where you are standing");
+				return false;
+			}
+
 			return world.GetBlock(blockCoordinates).IsReplacible;
 		}
 
-		public virtual void BreakBlock(Level world)
+		public virtual void BreakBlock(Level world, bool silent = false)
 		{
-			world.SetBlock(new Air {Coordinates = Coordinates});
-			BlockUpdate(world, Coordinates);
+			world.SetAir(Coordinates);
+
+			if (!silent)
+			{
+				DestroyBlockParticle particle = new DestroyBlockParticle(world, this);
+				particle.Spawn();
+			}
+
+			UpdateBlocks(world);
 		}
 
-		public virtual bool PlaceBlock(Level world, Player player, BlockCoordinates blockCoordinates, BlockFace face, Vector3 faceCoords)
+		protected void UpdateBlocks(Level world)
+		{
+			world.GetBlock(Coordinates + BlockCoordinates.Up).BlockUpdate(world, Coordinates);
+			world.GetBlock(Coordinates + BlockCoordinates.Down).BlockUpdate(world, Coordinates);
+			world.GetBlock(Coordinates + BlockCoordinates.West).BlockUpdate(world, Coordinates);
+			world.GetBlock(Coordinates + BlockCoordinates.East).BlockUpdate(world, Coordinates);
+			world.GetBlock(Coordinates + BlockCoordinates.South).BlockUpdate(world, Coordinates);
+			world.GetBlock(Coordinates + BlockCoordinates.North).BlockUpdate(world, Coordinates);
+		}
+
+		public virtual bool PlaceBlock(Level world, Player player, BlockCoordinates targetCoordinates, BlockFace face, Vector3 faceCoords)
 		{
 			// No default placement. Return unhandled.
 			return false;
 		}
 
-		public virtual bool Interact(Level world, Player player, BlockCoordinates blockCoordinates, BlockFace face)
+		public virtual void BlockAdded(Level level)
 		{
-			// No default interaction. Return unhandled.
-			return false;
 		}
 
 		public virtual bool Interact(Level world, Player player, BlockCoordinates blockCoordinates, BlockFace face, Vector3 faceCoord)
 		{
 			// No default interaction. Return unhandled.
-			return Interact(world, player, blockCoordinates, face);
+			return false;
 		}
 
-		public virtual void OnTick(Level level)
+		public virtual void OnTick(Level level, bool isRandom)
 		{
 		}
 
-
-		public virtual void BlockUpdate(Level world, BlockCoordinates blockCoordinates)
+		public virtual void BlockUpdate(Level level, BlockCoordinates blockCoordinates)
 		{
-			/*BlockCoordinates up = new BlockCoordinates() {X = blockCoordinates.X, Y = blockCoordinates.Y + 1, Z = blockCoordinates.Z};
-			/*BlockCoordinates down = new BlockCoordinates() { X = blockCoordinates.X, Y = blockCoordinates.Y - 1, Z = blockCoordinates.Z };
-			BlockCoordinates left = new BlockCoordinates() { X = blockCoordinates.X - 1, Y = blockCoordinates.Y, Z = blockCoordinates.Z };
-			BlockCoordinates right = new BlockCoordinates() { X = blockCoordinates.X + 1, Y = blockCoordinates.Y, Z = blockCoordinates.Z };
-			BlockCoordinates zplus = new BlockCoordinates() { X = blockCoordinates.X, Y = blockCoordinates.Y, Z = blockCoordinates.Z + 1 };
-			BlockCoordinates zminus = new BlockCoordinates() { X = blockCoordinates.X, Y = blockCoordinates.Y, Z = blockCoordinates.Z - 1 };
-			
-			//All other directions are in here too, however currently we only use this to update fire so we only check the block above.
-
-			if (world.GetBlock(up).Id == 51)
-			{
-				world.SetBlock(new Air {Coordinates = up});
-			}*/
-
-
-			//This code is really not something we wanna keep :-(
 		}
 
 		public float GetHardness()
@@ -108,11 +144,11 @@ namespace MiNET.Blocks
 			return Hardness/5.0F;
 		}
 
-		public double GetMineTime(Item miningTool)
-		{
-			int multiplier = (int) miningTool.ItemMaterial;
-			return Hardness*(1.5*multiplier);
-		}
+		//public double GetMineTime(Item miningTool)
+		//{
+		//	int multiplier = (int) miningTool.ItemMaterial;
+		//	return Hardness*(1.5*multiplier);
+		//}
 
 		protected BlockCoordinates GetNewCoordinatesFromFace(BlockCoordinates target, BlockFace face)
 		{
@@ -122,27 +158,39 @@ namespace MiNET.Blocks
 					return target + Level.Down;
 				case BlockFace.Up:
 					return target + Level.Up;
-				case BlockFace.East:
-					return target + Level.East;
+				case BlockFace.North:
+					return target + Level.North;
+				case BlockFace.South:
+					return target + Level.South;
 				case BlockFace.West:
 					return target + Level.West;
-				case BlockFace.North:
-					return target + Level.South;
-				case BlockFace.South:
-					return target + Level.North;
+				case BlockFace.East:
+					return target + Level.East;
 				default:
 					return target;
 			}
 		}
 
-		public virtual Item[] GetDrops()
+		public virtual Item[] GetDrops(Item tool)
 		{
-			return new Item[] { new ItemBlock(this, Metadata) {Count = 1} };
+			// Get a bitmask for drops that need metadata values for variant, but not for runtime data (rotation, etc)
+			int metadataMax = InventoryUtils.GetCreativeMetadataSlots().Where(item => item.Id == Id).Max(item => item.Metadata);
+			for (int i = metadataMax; i != 0; i = i >> 1)
+			{
+				metadataMax |= i;
+			}
+
+			return new Item[] {new ItemBlock(this, (short) (Metadata & metadataMax)) {Count = 1}};
 		}
 
 		public virtual Item GetSmelt()
 		{
 			return null;
+		}
+
+		public virtual float GetExperiencePoints()
+		{
+			return 0;
 		}
 
 		public virtual void DoPhysics(Level level)
@@ -152,6 +200,17 @@ namespace MiNET.Blocks
 		public virtual BoundingBox GetBoundingBox()
 		{
 			return new BoundingBox(Coordinates, Coordinates + 1);
+		}
+
+
+		public object Clone()
+		{
+			return MemberwiseClone();
+		}
+
+		public override string ToString()
+		{
+			return $"Id: {Id}, Metadata: {Metadata}, Coordinates: {Coordinates}";
 		}
 	}
 }

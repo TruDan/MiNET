@@ -183,3 +183,7 @@ UpgradeLog*.htm
 FakesAssemblies/
 /src/MiNET/packages
 /src/MiNET/.vs/config
+*.opendb
+.vs/
+
+/src/MiNET/MiNET.Console/dist

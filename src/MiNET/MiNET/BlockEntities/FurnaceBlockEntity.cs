@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using fNbt;
 using MiNET.Blocks;
 using MiNET.Items;
@@ -168,13 +169,13 @@ namespace MiNET.BlockEntities
 				cookTimeSetData.windowId = Inventory.WindowsId;
 				cookTimeSetData.property = 0;
 				cookTimeSetData.value = CookTime;
-				observer.SendPackage(cookTimeSetData);
+				observer.SendPacket(cookTimeSetData);
 
 				var burnTimeSetData = McpeContainerSetData.CreateObject();
 				burnTimeSetData.windowId = Inventory.WindowsId;
 				burnTimeSetData.property = 1;
 				burnTimeSetData.value = BurnTick;
-				observer.SendPackage(burnTimeSetData);
+				observer.SendPacket(burnTimeSetData);
 			}
 		}
 
@@ -198,6 +199,23 @@ namespace MiNET.BlockEntities
 		private short GetFuelEfficiency(Item item)
 		{
 			return (short) (item.FuelEfficiency*20);
+		}
+
+		public override List<Item> GetDrops()
+		{
+			List<Item> slots = new List<Item>();
+
+			var items = Compound["Items"] as NbtList;
+			if (items == null) return slots;
+
+			for (byte i = 0; i < items.Count; i++)
+			{
+				NbtCompound itemData = (NbtCompound) items[i];
+				Item item = ItemFactory.GetItem(itemData["id"].ShortValue, itemData["Damage"].ShortValue, itemData["Count"].ByteValue);
+				slots.Add(item);
+			}
+
+			return slots;
 		}
 	}
 }

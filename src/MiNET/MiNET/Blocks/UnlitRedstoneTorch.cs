@@ -17,7 +17,7 @@ namespace MiNET.Blocks
 			IsSolid = false;
 		}
 
-		protected override bool CanPlace(Level world, BlockCoordinates blockCoordinates, BlockFace face)
+		protected override bool CanPlace(Level world, Player player, BlockCoordinates blockCoordinates, BlockCoordinates targetCoordinates, BlockFace face)
 		{
 			Block block = world.GetBlock(blockCoordinates);
 			if (block is Farmland
@@ -26,7 +26,7 @@ namespace MiNET.Blocks
 				|| block is Tnt
 				|| block is BlockStairs
 				|| block is StoneSlab
-				|| block is WoodSlab) return true;
+				|| block is WoodenSlab) return true;
 
 			//TODO: More checks here, but PE blocks it pretty good right now
 			if (block is Glass && face == BlockFace.Up) return true;
@@ -43,16 +43,16 @@ namespace MiNET.Blocks
 				case BlockFace.Up:
 					Metadata = 5;
 					break;
-				case BlockFace.East:
+				case BlockFace.North:
 					Metadata = 4;
 					break;
-				case BlockFace.West:
+				case BlockFace.South:
 					Metadata = 3;
 					break;
-				case BlockFace.North:
+				case BlockFace.West:
 					Metadata = 2;
 					break;
-				case BlockFace.South:
+				case BlockFace.East:
 					Metadata = 1;
 					break;
 			}
@@ -61,7 +61,7 @@ namespace MiNET.Blocks
 			return true;
 		}
 
-		public override Item[] GetDrops()
+		public override Item[] GetDrops(Item tool)
 		{
 			return new[] {new ItemBlock(new RedstoneTorch(), 0)};
 		}

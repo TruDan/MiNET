@@ -1,4 +1,29 @@
-﻿using System;
+﻿#region LICENSE
+
+// The contents of this file are subject to the Common Public Attribution
+// License Version 1.0. (the "License"); you may not use this file except in
+// compliance with the License. You may obtain a copy of the License at
+// https://github.com/NiclasOlofsson/MiNET/blob/master/LICENSE. 
+// The License is based on the Mozilla Public License Version 1.1, but Sections 14 
+// and 15 have been added to cover use of software over a computer network and 
+// provide for limited attribution for the Original Developer. In addition, Exhibit A has 
+// been modified to be consistent with Exhibit B.
+// 
+// Software distributed under the License is distributed on an "AS IS" basis,
+// WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License for
+// the specific language governing rights and limitations under the License.
+// 
+// The Original Code is Niclas Olofsson.
+// 
+// The Original Developer is the Initial Developer.  The Initial Developer of
+// the Original Code is Niclas Olofsson.
+// 
+// All portions of the code written by Niclas Olofsson are Copyright (c) 2014-2017 Niclas Olofsson. 
+// All Rights Reserved.
+
+#endregion
+
+using System;
 
 namespace MiNET.Utils
 {
@@ -23,10 +48,16 @@ namespace MiNET.Utils
 			Z = v.Z;
 		}
 
+		public ChunkCoordinates(BlockCoordinates coordinates)
+		{
+			X = coordinates.X >> 4;
+			Z = coordinates.Z >> 4;
+		}
+
 		public ChunkCoordinates(PlayerLocation location)
 		{
-			X = ((int)Math.Floor(location.X)) >> 4;
-			Z = ((int)Math.Floor(location.Z)) >> 4;
+			X = ((int) Math.Floor(location.X)) >> 4;
+			Z = ((int) Math.Floor(location.Z)) >> 4;
 		}
 
 		/// <summary>
@@ -35,7 +66,7 @@ namespace MiNET.Utils
 		/// <returns></returns>
 		public override string ToString()
 		{
-			return string.Format("<{0},{1}>", X, Z);
+			return $"X: {X}, Z: {Z}";
 		}
 
 		#region Math
@@ -70,7 +101,7 @@ namespace MiNET.Utils
 			return new ChunkCoordinates(
 				Math.Min(value1.X, value2.X),
 				Math.Min(value1.Z, value2.Z)
-				);
+			);
 		}
 
 		public static ChunkCoordinates Max(ChunkCoordinates value1, ChunkCoordinates value2)
@@ -78,7 +109,7 @@ namespace MiNET.Utils
 			return new ChunkCoordinates(
 				Math.Max(value1.X, value2.X),
 				Math.Max(value1.Z, value2.Z)
-				);
+			);
 		}
 
 		#endregion
@@ -177,14 +208,16 @@ namespace MiNET.Utils
 			return new ChunkCoordinates(a%b.X, a%b.Z);
 		}
 
-		//public static explicit operator ChunkCoordinates(BlockCoordinates a)
-		//{
-		//	return new ChunkCoordinates(a.X, a.Z);
-		//}
+		public static explicit operator ChunkCoordinates(BlockCoordinates b)
+		{
+			return new ChunkCoordinates(b.X >> 4, b.Z >> 4);
+		}
 
 		#endregion
 
 		#region Constants
+
+		public static readonly ChunkCoordinates None = new ChunkCoordinates(Int32.MinValue);
 
 		public static readonly ChunkCoordinates Zero = new ChunkCoordinates(0);
 		public static readonly ChunkCoordinates One = new ChunkCoordinates(1);

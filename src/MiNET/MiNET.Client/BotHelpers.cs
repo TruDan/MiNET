@@ -3,7 +3,6 @@ using System.Numerics;
 using System.Threading;
 using System.Threading.Tasks;
 using log4net;
-using MiNET.Blocks;
 using MiNET.Items;
 using MiNET.Net;
 using MiNET.Utils;
@@ -22,7 +21,7 @@ namespace MiNET.Client
 			var pos = new PlayerLocation(sourceLocation.X, sourceLocation.Y, sourceLocation.Z);
 			if (dx > 0 || dz > 0)
 			{
-				double tanOutput = 90 - RadianToDegree(Math.Atan(dx / (dz)));
+				double tanOutput = 90 - RadianToDegree(Math.Atan(dx/(dz)));
 				double thetaOffset = 270d;
 				if (dz < 0)
 				{
@@ -30,13 +29,13 @@ namespace MiNET.Client
 				}
 				var yaw = thetaOffset + tanOutput;
 
-				double bDiff = Math.Sqrt((dx * dx) + (dz * dz));
+				double bDiff = Math.Sqrt((dx*dx) + (dz*dz));
 				var dy = (sourceLocation.Y) - (targetLocation.Y);
-				double pitch = RadianToDegree(Math.Atan(dy / (bDiff)));
+				double pitch = RadianToDegree(Math.Atan(dy/(bDiff)));
 
-				pos.Yaw = (float)yaw;
-				pos.HeadYaw = (float)yaw;
-				pos.Pitch = (float)pitch;
+				pos.Yaw = (float) yaw;
+				pos.HeadYaw = (float) yaw;
+				pos.Pitch = (float) pitch;
 			}
 
 			return pos;
@@ -63,26 +62,41 @@ namespace MiNET.Client
 			Action<Task, Item, int> doMobEquipmentTask = (t, item, selectedSlot) =>
 			{
 				McpeMobEquipment message = new McpeMobEquipment();
-				message.entityId = client.EntityId;
+				message.runtimeEntityId = client.EntityId;
 				message.item = item;
 				message.selectedSlot = (byte) selectedSlot;
 				message.slot = (byte) (selectedSlot + 9);
-				client.SendPackage(message);
+				client.SendPacket(message);
 			};
 			return doMobEquipmentTask;
 		}
 
-		public static Action<Task, Item, BlockCoordinates> DoUseItem(MiNetClient client)
+		public static Action<Task, string> DoSendCommand(MiNetClient client)
 		{
-			Action<Task, Item, BlockCoordinates> doUseItem = (t, item, coords) =>
+			Action<Task, string> doUseItem = (t, command) =>
 			{
-				McpeUseItem message = new McpeUseItem();
-				message.blockcoordinates = coords /* - new BlockCoordinates(0, 1, 0)*/;
-				message.face = 4;
-				message.facecoordinates = new Vector3(0.1f, 0.1f, 0.1f);
-				message.playerposition = client.CurrentLocation.ToVector3();
-				message.item = item;
-				client.SendPackage(message);
+				//McpeCommandRequest commandStep = McpeCommandRequest.CreateObject();
+				//commandStep.commandName = "fill";
+				//commandStep.commandOverload = "replace";
+				//commandStep.unknown1 = 0;
+				//commandStep.currentStep = 0;
+				//commandStep.isOutput = false;
+				//commandStep.clientId = client.ClientId;
+				////commandStep.commandInputJson = "{\n   \"tileName\" : \"dirt\",\n   \"from\" : {\n      \"x\" : 0,\n      \"xrelative\" : false,\n      \"y\" : 10,\n      \"yrelative\" : false,\n      \"z\" : 0,\n      \"zrelative\" : false\n   },\n   \"to\" : {\n      \"x\" : 10,\n      \"xrelative\" : false,\n      \"y\" : 10,\n      \"yrelative\" : false,\n      \"z\" : 10,\n      \"zrelative\" : false\n   }\n}\n";
+				//commandStep.commandInputJson = "{\n   \"from\" : {\n      \"x\" : 0,\n      \"xrelative\" : false,\n      \"y\" : 10,\n      \"yrelative\" : false,\n      \"z\" : 0,\n      \"zrelative\" : false\n   },\n   \"tileName\" : \"dirt\",\n   \"to\" : {\n      \"x\" : 10,\n      \"xrelative\" : false,\n      \"y\" : 10,\n      \"yrelative\" : false,\n      \"z\" : 10,\n      \"zrelative\" : false\n   }\n}\n";
+				////   "commandInputJson": "{\n   \"from\" : {\n      \"x\" : 0,\n      \"xrelative\" : false,\n      \"y\" : 10,\n      \"yrelative\" : false,\n      \"z\" : 0,\n      \"zrelative\" : false\n   },\n   \"tileName\" : \"dirt\",\n   \"to\" : {\n      \"x\" : 10,\n      \"xrelative\" : false,\n      \"y\" : 10,\n      \"yrelative\" : false,\n      \"z\" : 10,\n      \"zrelative\" : false\n   }\n}\n",
+
+				////commandStep.commandInputJson = "null\n";
+				//commandStep.commandOutputJson = "null\n";
+				//commandStep.unknown7 = 0;
+				//commandStep.unknown8 = 0;
+				//commandStep.entityIdSelf = client.NetworkEntityId;
+				////Log.Error($"Entity ID used={commandStep.entityIdSelf}\n{Package.HexDump(commandStep.Encode())}");
+				//client.SendPackage(commandStep);
+				McpeCommandRequest request = new McpeCommandRequest();
+				request.command = command;
+				request.unknownUuid = new UUID(Guid.NewGuid().ToString());
+				client.SendPacket(request);
 			};
 			return doUseItem;
 		}
@@ -99,7 +113,7 @@ namespace MiNET.Client
 				{
 					// First just rotate towards target pos
 					McpeMovePlayer movePlayerPacket = McpeMovePlayer.CreateObject();
-					movePlayerPacket.entityId = client.EntityId;
+					movePlayerPacket.runtimeEntityId = client.EntityId;
 					movePlayerPacket.x = client.CurrentLocation.X;
 					movePlayerPacket.y = client.CurrentLocation.Y;
 					movePlayerPacket.z = client.CurrentLocation.Z;
@@ -122,7 +136,7 @@ namespace MiNET.Client
 						client.CurrentLocation = new PlayerLocation(Vector3.Lerp(originalPosition, targetPosition, 1 - weight));
 
 						McpeMovePlayer movePlayerPacket = McpeMovePlayer.CreateObject();
-						movePlayerPacket.entityId = client.EntityId;
+						movePlayerPacket.runtimeEntityId = client.EntityId;
 						movePlayerPacket.x = client.CurrentLocation.X;
 						movePlayerPacket.y = client.CurrentLocation.Y;
 						movePlayerPacket.z = client.CurrentLocation.Z;
@@ -130,7 +144,7 @@ namespace MiNET.Client
 						movePlayerPacket.pitch = lookAtPos.Pitch;
 						movePlayerPacket.headYaw = lookAtPos.HeadYaw;
 
-						client.SendPackage(movePlayerPacket);
+						client.SendPacket(movePlayerPacket);
 
 						Thread.Sleep(50);
 						continue;
@@ -139,7 +153,7 @@ namespace MiNET.Client
 						client.CurrentLocation = new PlayerLocation(targetPosition);
 
 						McpeMovePlayer movePlayerPacket = McpeMovePlayer.CreateObject();
-						movePlayerPacket.entityId = client.EntityId;
+						movePlayerPacket.runtimeEntityId = client.EntityId;
 						movePlayerPacket.x = client.CurrentLocation.X;
 						movePlayerPacket.y = client.CurrentLocation.Y;
 						movePlayerPacket.z = client.CurrentLocation.Z;
@@ -147,7 +161,7 @@ namespace MiNET.Client
 						movePlayerPacket.pitch = lookAtPos.Pitch;
 						movePlayerPacket.headYaw = lookAtPos.HeadYaw;
 
-						client.SendPackage(movePlayerPacket);
+						client.SendPacket(movePlayerPacket);
 					}
 					break;
 				}

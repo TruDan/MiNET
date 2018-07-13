@@ -14,7 +14,7 @@ namespace MiNET.Items
 			MaxStackSize = 1;
 		}
 
-		public override void UseItem(Level world, Player player, BlockCoordinates blockCoordinates, BlockFace face, Vector3 faceCoords)
+		public override void PlaceBlock(Level world, Player player, BlockCoordinates blockCoordinates, BlockFace face, Vector3 faceCoords)
 		{
 			var coor = GetNewCoordinatesFromFace(blockCoordinates, face);
 			if (face == BlockFace.Up) // On top of block
@@ -48,6 +48,13 @@ namespace MiNET.Items
 
 
 			world.SetBlockEntity(skullBlockEntity);
+
+			if (player.GameMode == GameMode.Survival)
+			{
+				var itemInHand = player.Inventory.GetItemInHand();
+				itemInHand.Count--;
+				player.Inventory.SetInventorySlot(player.Inventory.InHandSlot, itemInHand);
+			}
 		}
 	}
 }

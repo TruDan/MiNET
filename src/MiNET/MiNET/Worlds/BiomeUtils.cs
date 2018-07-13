@@ -42,7 +42,7 @@ namespace MiNET.Worlds
 			new Biome {Id = 23, Name = "Jungle Edge", Temperature = 0.95f, Downfall = 0.8f},
 			new Biome {Id = 24, Name = "Deep Ocean", Temperature = 0.5f, Downfall = 0.5f},
 			new Biome {Id = 25, Name = "Stone Beach", Temperature = 0.2f, Downfall = 0.3f},
-			new Biome {Id = 26, Name = "Cold Beach", Temperature = 0.05f, Downfall = 0.3f},
+			new Biome {Id = 26, Name = "Cold ", Temperature = 0.05f, Downfall = 0.3f},
 			new Biome {Id = 27, Name = "Birch Forest", Temperature = 0.6f, Downfall = 0.6f},
 			new Biome {Id = 28, Name = "Birch Forest Hills", Temperature = 0.6f, Downfall = 0.6f},
 			new Biome {Id = 29, Name = "Roofed Forest", Temperature = 0.7f, Downfall = 0.8f},
@@ -242,9 +242,9 @@ namespace MiNET.Worlds
 			}
 		}
 
-		public Biome GetBiome(int biomeId)
+		public static Biome GetBiome(int biomeId)
 		{
-			return Biomes.FirstOrDefault(biome => biome.Id == biomeId) ?? new Biome {Id = biomeId};
+			return Biomes.FirstOrDefault(biome => biome.Id == biomeId) ?? new Biome {Id = biomeId, Name = "" + biomeId};
 		}
 
 		public int BiomeSwampRiverColor(int color)

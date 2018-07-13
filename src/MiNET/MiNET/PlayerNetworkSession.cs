@@ -1,3 +1,28 @@
+#region LICENSE
+
+// The contents of this file are subject to the Common Public Attribution
+// License Version 1.0. (the "License"); you may not use this file except in
+// compliance with the License. You may obtain a copy of the License at
+// https://github.com/NiclasOlofsson/MiNET/blob/master/LICENSE. 
+// The License is based on the Mozilla Public License Version 1.1, but Sections 14 
+// and 15 have been added to cover use of software over a computer network and 
+// provide for limited attribution for the Original Developer. In addition, Exhibit A has 
+// been modified to be consistent with Exhibit B.
+// 
+// Software distributed under the License is distributed on an "AS IS" basis,
+// WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License for
+// the specific language governing rights and limitations under the License.
+// 
+// The Original Code is MiNET.
+// 
+// The Original Developer is the Initial Developer.  The Initial Developer of
+// the Original Code is Niclas Olofsson.
+// 
+// All portions of the code written by Niclas Olofsson are Copyright (c) 2014-2017 Niclas Olofsson. 
+// All Rights Reserved.
+
+#endregion
+
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -11,6 +36,7 @@ using fNbt;
 using log4net;
 using MiNET.Net;
 using MiNET.Utils;
+using MiNET.Utils.Skins;
 
 namespace MiNET
 {
@@ -29,13 +55,18 @@ namespace MiNET
 
 		public IPEndPoint EndPoint { get; private set; }
 		public short MtuSize { get; set; }
+		public long NetworkIdentifier { get; set; }
 
 		public int DatagramSequenceNumber = -1;
-		public int ReliableMessageNumber = 0;
+		public int ReliableMessageNumber = -1;
+		public int SplitPartId = 0;
 		public int OrderingIndex = -1;
 		public int ErrorCount { get; set; }
 
 		public bool Evicted { get; set; }
+
+		public Random Random { get; } = new Random();
+
 		public ConnectionState State { get; set; }
 
 		public DateTime LastUpdatedTime { get; set; }
@@ -46,7 +77,7 @@ namespace MiNET
 		public long RttVar { get; set; }
 		public long Rto { get; set; }
 
-		public ConcurrentDictionary<int, SplitPartPackage[]> Splits { get; } = new ConcurrentDictionary<int, SplitPartPackage[]>();
+		public ConcurrentDictionary<int, SplitPartPacket[]> Splits { get; } = new ConcurrentDictionary<int, SplitPartPacket[]>();
 		public ConcurrentQueue<int> PlayerAckQueue { get; } = new ConcurrentQueue<int>();
 		public ConcurrentDictionary<int, Datagram> WaitingForAcksQueue { get; } = new ConcurrentDictionary<int, Datagram>();
 
@@ -62,11 +93,21 @@ namespace MiNET
 			MtuSize = mtuSize;
 
 			_cancellationToken = new CancellationTokenSource();
-			_tickerHighPrecisionTimer = new HighPrecisionTimer(10, SendTick);
+			//_tickerHighPrecisionTimer = new HighPrecisionTimer(10, SendTick, true);
 		}
 
 		public void Close()
 		{
+			if (Server == null) // EMULATOR
+			{
+				if (_tickerHighPrecisionTimer != null)
+				{
+					_tickerHighPrecisionTimer.Dispose();
+				}
+
+				return;
+			}
+
 			PlayerNetworkSession session;
 			if (!Server.ServerInfo.PlayerSessions.TryRemove(EndPoint, out session))
 			{
@@ -103,14 +144,14 @@ namespace MiNET
 
 			foreach (var kvp in Splits)
 			{
-				SplitPartPackage[] splitPartPackagese;
-				if (Splits.TryRemove(kvp.Key, out splitPartPackagese))
+				SplitPartPacket[] splitPartPackets;
+				if (Splits.TryRemove(kvp.Key, out splitPartPackets))
 				{
-					if (splitPartPackagese == null) continue;
+					if (splitPartPackets == null) continue;
 
-					foreach (SplitPartPackage package in splitPartPackagese)
+					foreach (SplitPartPacket packet in splitPartPackets)
 					{
-						if (package != null) package.PutPool();
+						if (packet != null) packet.PutPool();
 					}
 				}
 			}
@@ -137,11 +178,11 @@ namespace MiNET
 		private AutoResetEvent _mainWaitEvent = new AutoResetEvent(false);
 		private object _eventSync = new object();
 
-		private ConcurrentPriorityQueue<int, Package> _queue = new ConcurrentPriorityQueue<int, Package>();
+		private ConcurrentPriorityQueue<int, Packet> _queue = new ConcurrentPriorityQueue<int, Packet>();
 		private CancellationTokenSource _cancellationToken;
 		private Thread _processingThread;
 
-		public void AddToProcessing(Package message)
+		public void AddToProcessing(Packet message)
 		{
 			try
 			{
@@ -154,7 +195,7 @@ namespace MiNET
 					if (CryptoContext == null || CryptoContext.UseEncryption == false)
 					{
 						_lastSequenceNumber = message.OrderingIndex;
-						HandlePackage(message, this);
+						HandlePacket(message, this);
 						return;
 					}
 				}
@@ -164,7 +205,7 @@ namespace MiNET
 					if (_queue.Count == 0 && message.OrderingIndex == _lastSequenceNumber + 1)
 					{
 						_lastSequenceNumber = message.OrderingIndex;
-						HandlePackage(message, this);
+						HandlePacket(message, this);
 						return;
 					}
 
@@ -195,7 +236,7 @@ namespace MiNET
 			{
 				while (!_cancellationToken.IsCancellationRequested)
 				{
-					KeyValuePair<int, Package> pair;
+					KeyValuePair<int, Packet> pair;
 
 					if (_queue.TryPeek(out pair))
 					{
@@ -205,7 +246,7 @@ namespace MiNET
 							{
 								_lastSequenceNumber = pair.Key;
 
-								HandlePackage(pair.Value, this);
+								HandlePacket(pair.Value, this);
 
 								if (_queue.Count == 0)
 								{
@@ -238,128 +279,140 @@ namespace MiNET
 			}
 			catch (Exception e)
 			{
+				Log.Error($"Exit receive handler task for player", e);
 			}
 
-			//Log.Warn($"Exit receive handler task for {Player.Username}");
 			return Task.CompletedTask;
 		}
 
-		internal void HandlePackage(Package message, PlayerNetworkSession playerSession)
+		internal void HandlePacket(Packet message, PlayerNetworkSession playerSession)
 		{
-			if (message == null)
-			{
-				return;
-			}
+			//SignalTick();
 
-			if (typeof (McpeWrapper) == message.GetType())
+			try
 			{
-				McpeWrapper wrapper = (McpeWrapper) message;
-
-				// Get bytes
-				byte[] payload = wrapper.payload;
-				if (playerSession.CryptoContext != null && playerSession.CryptoContext.UseEncryption)
+				if (message == null)
 				{
-					payload = CryptoUtils.Decrypt(payload, playerSession.CryptoContext);
+					return;
 				}
 
-				//if (Log.IsDebugEnabled)
-				//	Log.Debug($"0x{payload[0]:x2}\n{Package.HexDump(payload)}");
-
-				var msg = PackageFactory.CreatePackage(payload[0], payload, "mcpe") ?? new UnknownPackage(payload[0], payload);
-				msg.DatagramSequenceNumber = wrapper.DatagramSequenceNumber;
-				msg.Reliability = wrapper.Reliability;
-				msg.ReliableMessageNumber = wrapper.ReliableMessageNumber;
-				msg.OrderingChannel = wrapper.OrderingChannel;
-				msg.OrderingIndex = wrapper.OrderingIndex;
-				HandlePackage(msg, playerSession);
-
-				message.PutPool();
-				return;
-			}
-
-			if (typeof (UnknownPackage) == message.GetType())
-			{
-				UnknownPackage packet = (UnknownPackage) message;
-				if (Log.IsDebugEnabled) Log.Warn($"Received unknown package 0x{message.Id:X2}\n{Package.HexDump(packet.Message)}");
-
-				message.PutPool();
-				return;
-			}
-
-			if (typeof (McpeBatch) == message.GetType())
-			{
-				McpeBatch batch = (McpeBatch) message;
-
-				var messages = new List<Package>();
-
-				// Get bytes
-				byte[] payload = batch.payload;
-				// Decompress bytes
-
-				MemoryStream stream = new MemoryStream(payload);
-				if (stream.ReadByte() != 0x78)
+				if (typeof (UnknownPacket) == message.GetType())
 				{
-					throw new InvalidDataException("Incorrect ZLib header. Expected 0x78 0x9C");
+					UnknownPacket packet = (UnknownPacket) message;
+					if (Log.IsDebugEnabled) Log.Warn($"Received unknown packet 0x{message.Id:X2}\n{Packet.HexDump(packet.Message)}");
+
+					message.PutPool();
+					return;
 				}
-				stream.ReadByte();
-				using (var defStream2 = new DeflateStream(stream, CompressionMode.Decompress, false))
-				{
-					// Get actual package out of bytes
-					MemoryStream destination = MiNetServer.MemoryStreamManager.GetStream();
-					defStream2.CopyTo(destination);
-					destination.Position = 0;
-					NbtBinaryReader reader = new NbtBinaryReader(destination, true);
 
-					while (destination.Position < destination.Length)
+				if (typeof (McpeWrapper) == message.GetType())
+				{
+					McpeWrapper batch = (McpeWrapper) message;
+					var messages = new List<Packet>();
+
+					// Get bytes
+					byte[] payload = batch.payload;
+					if (playerSession.CryptoContext != null && playerSession.CryptoContext.UseEncryption)
 					{
-						//int len = reader.ReadInt32();
-						int len = BatchUtils.ReadLenght(destination);
-						byte[] internalBuffer = reader.ReadBytes(len);
-
-						//if (Log.IsDebugEnabled)
-						//	Log.Debug($"0x{internalBuffer[0]:x2}\n{Package.HexDump(internalBuffer)}");
-
-						messages.Add(PackageFactory.CreatePackage(internalBuffer[0], internalBuffer, "mcpe") ?? new UnknownPackage(internalBuffer[0], internalBuffer));
+						payload = CryptoUtils.Decrypt(payload, playerSession.CryptoContext);
 					}
 
-					if (destination.Length > destination.Position) throw new Exception("Have more data");
-				}
-				foreach (var msg in messages)
-				{
-					msg.DatagramSequenceNumber = batch.DatagramSequenceNumber;
-					msg.Reliability = batch.Reliability;
-					msg.ReliableMessageNumber = batch.ReliableMessageNumber;
-					msg.OrderingChannel = batch.OrderingChannel;
-					msg.OrderingIndex = batch.OrderingIndex;
-					HandlePackage(msg, playerSession);
-				}
 
-				message.PutPool();
-				return;
-			}
+					// Decompress bytes
 
-			MiNetServer.TraceReceive(message, message.OrderingIndex);
+					MemoryStream stream = new MemoryStream(payload);
+					if (stream.ReadByte() != 0x78)
+					{
+						if (Log.IsDebugEnabled) Log.Error($"Incorrect ZLib header. Expected 0x78 0x9C 0x{message.Id:X2}\n{Packet.HexDump(batch.payload)}");
+						if (Log.IsDebugEnabled) Log.Error($"Incorrect ZLib header. Decrypted 0x{message.Id:X2}\n{Packet.HexDump(payload)}");
+						throw new InvalidDataException("Incorrect ZLib header. Expected 0x78 0x9C");
+					}
+					stream.ReadByte();
+					using (var deflateStream = new DeflateStream(stream, CompressionMode.Decompress, false))
+					{
+						// Get actual packet out of bytes
+						using (MemoryStream destination = MiNetServer.MemoryStreamManager.GetStream())
+						{
+							deflateStream.CopyTo(destination);
+							destination.Position = 0;
 
-			if (CryptoContext != null && CryptoContext.UseEncryption)
-			{
-				MiNetServer.FastThreadPool.QueueUserWorkItem(delegate()
-				{
-					HandlePackage(MessageHandler, message as Package);
+							while (destination.Position < destination.Length)
+							{
+								int len = (int) VarInt.ReadUInt32(destination);
+								long pos = destination.Position;
+								int id = (int) VarInt.ReadUInt32(destination);
+								len = (int) (len - (destination.Position - pos)); // calculate len of buffer after varint
+								byte[] internalBuffer = new byte[len];
+								destination.Read(internalBuffer, 0, len);
+
+								//if (Log.IsDebugEnabled)
+								//	Log.Debug($"0x{internalBuffer[0]:x2}\n{Packet.HexDump(internalBuffer)}");
+
+								try
+								{
+									messages.Add(PacketFactory.Create((byte) id, internalBuffer, "mcpe") ??
+												new UnknownPacket((byte)id, internalBuffer));
+								}
+								catch (Exception e)
+								{
+									if (Log.IsDebugEnabled) Log.Warn($"Error parsing packet 0x{message.Id:X2}\n{Packet.HexDump(internalBuffer)}");
+
+									throw;
+								}
+							}
+
+							if (destination.Length > destination.Position) throw new Exception("Have more data");
+						}
+					}
+					foreach (var msg in messages)
+					{
+						// Temp fix for performance, take 1.
+						var interact = msg as McpeInteract;
+						if (interact?.actionId == 4 && interact.targetRuntimeEntityId == 0) continue;
+
+						msg.DatagramSequenceNumber = batch.DatagramSequenceNumber;
+						msg.Reliability = batch.Reliability;
+						msg.ReliableMessageNumber = batch.ReliableMessageNumber;
+						msg.OrderingChannel = batch.OrderingChannel;
+						msg.OrderingIndex = batch.OrderingIndex;
+						HandlePacket(msg, playerSession);
+					}
+
 					message.PutPool();
-				});
+					return;
+				}
+
+				MiNetServer.TraceReceive(message);
+
+				if (CryptoContext != null && CryptoContext.UseEncryption)
+				{
+					MiNetServer.FastThreadPool.QueueUserWorkItem(() =>
+					{
+						HandlePacket(MessageHandler, message as Packet);
+						message.PutPool();
+					});
+				}
+				else
+				{
+					HandlePacket(MessageHandler, message);
+					message.PutPool();
+				}
 			}
-			else
+			catch (Exception e)
 			{
-				HandlePackage(MessageHandler, message);
-				message.PutPool();
+				Log.Error("Packet handling", e);
+				throw;
 			}
 		}
 
-		private void HandlePackage(IMcpeMessageHandler handler, Package message)
+		private void HandlePacket(IMcpeMessageHandler handler, Packet message)
 		{
-			//var result = Server.PluginManager.PluginPacketHandler(message, true, Player);
-			////if (result != message) message.PutPool();
-			//message = result;
+			if (handler is Player)
+			{
+				var result = Server.PluginManager.PluginPacketHandler(message, true, (Player) handler);
+				if (result != message) message.PutPool();
+				message = result;
+			}
 
 			if (message == null)
 			{
@@ -386,16 +439,20 @@ namespace MiNET
 				HandleDisconnectionNotification();
 			}
 
-			else if (typeof (McpeClientMagic) == message.GetType())
+			else if (typeof (McpeClientToServerHandshake) == message.GetType())
 			{
-				// Start encrypotion
-				handler.HandleMcpeClientMagic((McpeClientMagic) message);
+				// Start encryption
+				handler.HandleMcpeClientToServerHandshake((McpeClientToServerHandshake) message);
 			}
 
-			else if (typeof(McpeResourcePackClientResponse) == message.GetType())
+			else if (typeof (McpeResourcePackClientResponse) == message.GetType())
 			{
-				// Start encrypotion
-				handler.	HandleMcpeResourcePackClientResponse((McpeResourcePackClientResponse)message);
+				handler.HandleMcpeResourcePackClientResponse((McpeResourcePackClientResponse) message);
+			}
+
+			else if (typeof (McpeResourcePackChunkRequest) == message.GetType())
+			{
+				handler.HandleMcpeResourcePackChunkRequest((McpeResourcePackChunkRequest) message);
 			}
 
 			else if (typeof (McpeUpdateBlock) == message.GetType())
@@ -404,9 +461,9 @@ namespace MiNET
 				// It is a bug that it leaks these messages.
 			}
 
-			else if (typeof (McpeRemoveBlock) == message.GetType())
+			else if (typeof (McpeLevelSoundEvent) == message.GetType())
 			{
-				handler.HandleMcpeRemoveBlock((McpeRemoveBlock) message);
+				handler.HandleMcpeLevelSoundEvent((McpeLevelSoundEvent) message);
 			}
 
 			else if (typeof (McpeAnimate) == message.GetType())
@@ -414,9 +471,9 @@ namespace MiNET
 				handler.HandleMcpeAnimate((McpeAnimate) message);
 			}
 
-			else if (typeof (McpeUseItem) == message.GetType())
+			else if (typeof (McpeEntityFall) == message.GetType())
 			{
-				handler.HandleMcpeUseItem((McpeUseItem) message);
+				handler.HandleMcpeEntityFall((McpeEntityFall) message);
 			}
 
 			else if (typeof (McpeEntityEvent) == message.GetType())
@@ -460,19 +517,14 @@ namespace MiNET
 				handler.HandleMcpeBlockEntityData((McpeBlockEntityData) message);
 			}
 
+			else if (typeof (McpeAdventureSettings) == message.GetType())
+			{
+				handler.HandleMcpeAdventureSettings((McpeAdventureSettings) message);
+			}
+
 			else if (typeof (McpePlayerAction) == message.GetType())
 			{
 				handler.HandleMcpePlayerAction((McpePlayerAction) message);
-			}
-
-			else if (typeof (McpeDropItem) == message.GetType())
-			{
-				handler.HandleMcpeDropItem((McpeDropItem) message);
-			}
-
-			else if (typeof (McpeContainerSetSlot) == message.GetType())
-			{
-				handler.HandleMcpeContainerSetSlot((McpeContainerSetSlot) message);
 			}
 
 			else if (typeof (McpeContainerClose) == message.GetType())
@@ -495,6 +547,31 @@ namespace MiNET
 				handler.HandleMcpeCraftingEvent((McpeCraftingEvent) message);
 			}
 
+			else if (typeof (McpeInventoryTransaction) == message.GetType())
+			{
+				handler.HandleMcpeInventoryTransaction((McpeInventoryTransaction) message);
+			}
+
+			else if (typeof (McpeServerSettingsRequest) == message.GetType())
+			{
+				handler.HandleMcpeServerSettingsRequest((McpeServerSettingsRequest) message);
+			}
+
+			else if (typeof (McpeSetPlayerGameType) == message.GetType())
+			{
+				handler.HandleMcpeSetPlayerGameType((McpeSetPlayerGameType) message);
+			}
+
+			else if (typeof (McpePlayerHotbar) == message.GetType())
+			{
+				handler.HandleMcpePlayerHotbar((McpePlayerHotbar) message);
+			}
+
+			else if (typeof (McpeInventoryContent) == message.GetType())
+			{
+				handler.HandleMcpeInventoryContent((McpeInventoryContent) message);
+			}
+
 			else if (typeof (McpeRequestChunkRadius) == message.GetType())
 			{
 				handler.HandleMcpeRequestChunkRadius((McpeRequestChunkRadius) message);
@@ -505,20 +582,79 @@ namespace MiNET
 				handler.HandleMcpeMapInfoRequest((McpeMapInfoRequest) message);
 			}
 
-			else if (typeof (McpeItemFramDropItem) == message.GetType())
+			else if (typeof (McpeItemFrameDropItem) == message.GetType())
 			{
-				handler.HandleMcpeItemFramDropItem((McpeItemFramDropItem) message);
+				handler.HandleMcpeItemFrameDropItem((McpeItemFrameDropItem) message);
 			}
 
-			else if (typeof (McpeItemFramDropItem) == message.GetType())
+			else if (typeof (McpePlayerInput) == message.GetType())
 			{
 				handler.HandleMcpePlayerInput((McpePlayerInput) message);
 			}
 
+			else if (typeof(McpeRiderJump) == message.GetType())
+			{
+				handler.HandleMcpeRiderJump((McpeRiderJump)message);
+			}
+
+			else if (typeof (McpeCommandRequest) == message.GetType())
+			{
+				handler.HandleMcpeCommandRequest((McpeCommandRequest) message);
+			}
+
+			else if (typeof (McpeBlockPickRequest) == message.GetType())
+			{
+				handler.HandleMcpeBlockPickRequest((McpeBlockPickRequest) message);
+			}
+
+			else if (typeof(McpeEntityPickRequest) == message.GetType())
+			{
+				handler.HandleMcpeEntityPickRequest((McpeEntityPickRequest)message);
+			}
+
+			else if (typeof (McpeModalFormResponse) == message.GetType())
+			{
+				handler.HandleMcpeModalFormResponse((McpeModalFormResponse) message);
+			}
+			else if (typeof (McpeCommandBlockUpdate) == message.GetType())
+			{
+				handler.HandleMcpeCommandBlockUpdate((McpeCommandBlockUpdate) message);
+			}
+
+			else if (typeof(McpeEntityPickRequest) == message.GetType())
+			{
+				handler.HandleMcpeEntityPickRequest((McpeEntityPickRequest)message);
+			}
+
+			else if (typeof(McpeMoveEntity) == message.GetType())
+			{
+				handler.HandleMcpeMoveEntity((McpeMoveEntity)message);
+			}
+
+			else if (typeof (McpeSetEntityMotion) == message.GetType())
+			{
+				handler.HandleMcpeSetEntityMotion((McpeSetEntityMotion) message);
+			}
+
+			else if (typeof(McpePhotoTransfer) == message.GetType())
+			{
+				handler.HandleMcpePhotoTransfer((McpePhotoTransfer)message);
+			}
+
+			else if (typeof(McpeSetEntityData) == message.GetType())
+			{
+				handler.HandleMcpeSetEntityData((McpeSetEntityData)message);
+			}
+
+			else if (typeof(McpeNpcRequest) == message.GetType())
+			{
+				handler.HandleMcpeNpcRequest((McpeNpcRequest)message);
+			}
+
 			else
 			{
-				Log.Error($"Unhandled package: {message.GetType().Name} 0x{message.Id:X2} for user: {Username}, IP {EndPoint.Address}");
-				if (Log.IsDebugEnabled) Log.Warn($"Unknown package 0x{message.Id:X2}\n{Package.HexDump(message.Bytes)}");
+				Log.Error($"Unhandled packet: {message.GetType().Name} 0x{message.Id:X2} for user: {Username}, IP {EndPoint.Address}");
+				if (Log.IsDebugEnabled) Log.Warn($"Unknown packet 0x{message.Id:X2}\n{Packet.HexDump(message.Bytes)}");
 				return;
 			}
 
@@ -527,23 +663,23 @@ namespace MiNET
 				long elapsedMilliseconds = message.Timer.ElapsedMilliseconds;
 				if (elapsedMilliseconds > 1000)
 				{
-					Log.WarnFormat("Package (0x{1:x2}) handling too long {0}ms for {2}", elapsedMilliseconds, message.Id, Username);
+					Log.WarnFormat("Packet (0x{1:x2}) handling too long {0}ms for {2}", elapsedMilliseconds, message.Id, Username);
 				}
 			}
 			else
 			{
-				Log.WarnFormat("Package (0x{0:x2}) timer not started for {1}.", message.Id, Username);
+				Log.WarnFormat("Packet (0x{0:x2}) timer not started for {1}.", message.Id, Username);
 			}
 		}
 
 		protected virtual void HandleConnectedPing(ConnectedPing message)
 		{
-			ConnectedPong package = ConnectedPong.CreateObject();
-			package.NoBatch = true;
-			package.ForceClear = true;
-			package.sendpingtime = message.sendpingtime;
-			package.sendpongtime = DateTimeOffset.UtcNow.Ticks/TimeSpan.TicksPerMillisecond;
-			SendPackage(package);
+			ConnectedPong packet = ConnectedPong.CreateObject();
+			packet.NoBatch = true;
+			packet.ForceClear = true;
+			packet.sendpingtime = message.sendpingtime;
+			packet.sendpongtime = DateTimeOffset.UtcNow.Ticks/TimeSpan.TicksPerMillisecond;
+			SendPacket(packet);
 		}
 
 		protected virtual void HandleConnectionRequest(ConnectionRequest message)
@@ -553,17 +689,17 @@ namespace MiNET
 			var response = ConnectionRequestAccepted.CreateObject();
 			response.NoBatch = true;
 			response.systemAddress = new IPEndPoint(IPAddress.Loopback, 19132);
-			response.systemAddresses = new IPEndPoint[10];
+			response.systemAddresses = new IPEndPoint[20];
 			response.systemAddresses[0] = new IPEndPoint(IPAddress.Loopback, 19132);
 			response.incomingTimestamp = message.timestamp;
 			response.serverTimestamp = DateTime.UtcNow.Ticks/TimeSpan.TicksPerMillisecond;
 
-			for (int i = 1; i < 10; i++)
+			for (int i = 1; i < 20; i++)
 			{
 				response.systemAddresses[i] = new IPEndPoint(IPAddress.Any, 19132);
 			}
 
-			SendPackage(response);
+			SendPacket(response);
 		}
 
 		protected virtual void HandleNewIncomingConnection(NewIncomingConnection message)
@@ -588,62 +724,69 @@ namespace MiNET
 			DetectLostConnections ping = DetectLostConnections.CreateObject();
 			ping.ForceClear = true;
 			ping.NoBatch = true;
-			SendPackage(ping);
+			SendPacket(ping);
 		}
 
 		// MCPE Login handling
 
 
-		private Queue<Package> _sendQueueNotConcurrent = new Queue<Package>();
+		private Queue<Packet> _sendQueueNotConcurrent = new Queue<Packet>();
 		private object _queueSync = new object();
 
-		public void SendPackage(Package package)
+		public void SendPacket(Packet packet)
 		{
-			MiNetServer.TraceSend(package);
-
-			if (package == null) return;
+			if (packet == null) return;
 
 			if (State == ConnectionState.Unconnected)
 			{
-				package.PutPool();
+				packet.PutPool();
 				return;
 			}
 
-			bool isBatch = package is McpeBatch;
+			MiNetServer.TraceSend(packet);
+
+			bool isBatch = packet is McpeWrapper;
 
 			if (!isBatch)
 			{
-				//var result = Server.PluginManager.PluginPacketHandler(package, false, Player);
-				//if (result != package) package.PutPool();
-				//package = result;
+				//var result = Server.PluginManager.PluginPacketHandler(packet, false, Player);
+				//if (result != packet) packet.PutPool();
+				//packet = result;
 
-				//if (package == null) return;
+				//if (packet == null) return;
 			}
 
 			lock (_queueSync)
 			{
-				_sendQueueNotConcurrent.Enqueue(package);
+				_sendQueueNotConcurrent.Enqueue(packet);
+				SignalTick();
 			}
 		}
 
 		private int i = 0;
 
-		private void SendTick(object state)
+		public void SendTick(object state)
 		{
-			SendAckQueue();
-			SendQueue();
-			if (i++ >= 5)
+			try
 			{
-				i = 0;
-				if (!_isRunning) Update();
+				SendAckQueue();
+				SendQueue();
+				if (i++ >= 5)
+				{
+					Update();
+					i = 0;
+				}
+
+			}
+			catch (Exception e)
+			{
+				Log.Error(e);
 			}
 		}
 
 
 		private object _updateSync = new object();
 		private Stopwatch _forceQuitTimer = new Stopwatch();
-
-		private bool _isRunning = false;
 
 		private void Update()
 		{
@@ -654,19 +797,18 @@ namespace MiNET
 			if (MiNetServer.FastThreadPool == null) return;
 
 			if (!Monitor.TryEnter(_updateSync)) return;
-			_isRunning = true;
-			_forceQuitTimer.Restart();
 
 			try
 			{
+				_forceQuitTimer.Restart();
+
 				if (Evicted) return;
 
 				long now = DateTime.UtcNow.Ticks/TimeSpan.TicksPerMillisecond;
 
 				long lastUpdate = LastUpdatedTime.Ticks/TimeSpan.TicksPerMillisecond;
-				bool serverHasNoLag = Server.ServerInfo.AvailableBytes < 1000;
 
-				if (serverHasNoLag && lastUpdate + Server.InacvitityTimeout + 3000 < now)
+				if (lastUpdate + Server.InacvitityTimeout + 3000 < now)
 				{
 					Evicted = true;
 					// Disconnect user
@@ -680,7 +822,7 @@ namespace MiNET
 				}
 
 
-				if (serverHasNoLag && State != ConnectionState.Connected && MessageHandler != null && lastUpdate + 3000 < now)
+				if (State != ConnectionState.Connected && MessageHandler != null && lastUpdate + 3000 < now)
 				{
 					MiNetServer.FastThreadPool.QueueUserWorkItem(() => { Disconnect("You've been kicked with reason: Lost connection."); });
 
@@ -689,11 +831,17 @@ namespace MiNET
 
 				if (MessageHandler == null) return;
 
-				if (serverHasNoLag && lastUpdate + Server.InacvitityTimeout < now && !WaitForAck)
+				if (!WaitForAck && (ResendCount > Server.ResendThreshold || lastUpdate + Server.InacvitityTimeout < now))
 				{
+					//TODO: Seems to have lost code here. This should actually count the resends too.
+					// Spam is a bit too much. The Russians have trouble with bad connections.
 					DetectLostConnection();
 					WaitForAck = true;
 				}
+
+				if (WaitingForAcksQueue.Count == 0) return;
+
+				if (WaitForAck) return;
 
 				if (Rto == 0) return;
 
@@ -720,28 +868,20 @@ namespace MiNET
 					datagramTimout = Math.Min(datagramTimout, 3000);
 					datagramTimout = Math.Max(datagramTimout, 100);
 
-					if (serverHasNoLag && elapsedTime >= datagramTimout)
+					if (datagram.RetransmitImmediate || elapsedTime >= datagramTimout)
 					{
-						//if (session.WaitForAck) return;
-
-						//session.WaitForAck = session.ResendCount++ > 3;
-
-						Datagram deleted;
-						if (!Evicted && WaitingForAcksQueue.TryRemove(datagram.Header.datagramSequenceNumber, out deleted))
+						if (!Evicted && WaitingForAcksQueue.TryRemove(datagram.Header.datagramSequenceNumber, out var deleted))
 						{
 							ErrorCount++;
+							ResendCount++;
 
-							MiNetServer.FastThreadPool.QueueUserWorkItem(delegate()
+							MiNetServer.FastThreadPool.QueueUserWorkItem(() =>
 							{
 								var dtgram = deleted;
 								if (Log.IsDebugEnabled)
-									Log.WarnFormat("TIMEOUT, Resent #{0} Type: {2} (0x{2:x2}) for {1} ({3} > {4}) RTO {5}",
-										deleted.Header.datagramSequenceNumber.IntValue(),
-										Username,
-										deleted.FirstMessageId,
-										elapsedTime,
-										datagramTimout,
-										Rto);
+								{
+									Log.Warn($"{(deleted.RetransmitImmediate ? "NAK RSND" : "TIMEOUT")}, Resent #{deleted.Header.datagramSequenceNumber.IntValue()} Type: {deleted.FirstMessageId} (0x{deleted.FirstMessageId:x2}) for {Username} ({elapsedTime} > {datagramTimout}) RTO {Rto}");
+								}
 								Server.SendDatagram(this, (Datagram) dtgram);
 								Interlocked.Increment(ref Server.ServerInfo.NumberOfResends);
 							});
@@ -756,10 +896,21 @@ namespace MiNET
 					Log.Warn($"Update took unexpected long time={_forceQuitTimer.ElapsedMilliseconds}, Count={WaitingForAcksQueue.Count}");
 				}
 
-				_isRunning = false;
 				Monitor.Exit(_updateSync);
 			}
 		}
+
+		public void SignalTick()
+		{
+			try
+			{
+				_tickerHighPrecisionTimer?.AutoReset?.Set();
+			}
+			catch (ObjectDisposedException)
+			{
+			}
+		}
+
 
 		private void SendAckQueue()
 		{
@@ -770,11 +921,9 @@ namespace MiNET
 			if (lenght == 0) return;
 
 			Acks acks = Acks.CreateObject();
-			//Acks acks = new Acks();
 			for (int i = 0; i < lenght; i++)
 			{
-				int ack;
-				if (!session.PlayerAckQueue.TryDequeue(out ack)) break;
+				if (!queue.TryDequeue(out var ack)) break;
 
 				Interlocked.Increment(ref Server.ServerInfo.NumberOfAckSent);
 				acks.acks.Add(ack);
@@ -792,73 +941,61 @@ namespace MiNET
 		private object _syncHack = new object();
 		private HighPrecisionTimer _tickerHighPrecisionTimer;
 
-		private void SendQueue()
+		public void SendQueue()
 		{
+			if (_sendQueueNotConcurrent.Count == 0) return;
+
 			if (!Monitor.TryEnter(_syncHack)) return;
 
 			try
 			{
-				using (MemoryStream memStream = MiNetServer.MemoryStreamManager.GetStream())
+				using (MemoryStream memStream = new MemoryStream())
 				{
-					var now = DateTime.UtcNow;
-
-					Queue<Package> queue = _sendQueueNotConcurrent;
+					Queue<Packet> queue = _sendQueueNotConcurrent;
 
 					int messageCount = 0;
 
 					int lenght = queue.Count;
 					for (int i = 0; i < lenght; i++)
 					{
-						Package package = null;
+						Packet packet = null;
 						lock (_queueSync)
 						{
 							if (queue.Count == 0) break;
 							try
 							{
-								package = queue.Dequeue();
+								packet = queue.Dequeue();
 							}
 							catch (Exception e)
 							{
 							}
 						}
 
-						if (package == null) continue;
+						if (packet == null) continue;
 
 						if (State == ConnectionState.Unconnected)
 						{
-							package.PutPool();
-							continue;
-						}
-
-						if (package.ValidUntil != null && now > package.ValidUntil.Value)
-						{
-							package.PutPool();
+							packet.PutPool();
 							continue;
 						}
 
 						if (lenght == 1)
 						{
-							Server.SendPackage(this, package);
+							Server.SendPacket(this, packet);
 						}
-						else if (package is McpeBatch)
+						else if (packet is McpeWrapper)
 						{
 							SendBuffered(messageCount, memStream);
 							messageCount = 0;
-							Server.SendPackage(this, package);
+							Server.SendPacket(this, packet);
 							Thread.Sleep(1); // Really important to slow down speed a bit
 						}
-						else if (package.NoBatch)
+						else if (packet.NoBatch)
 						{
 							SendBuffered(messageCount, memStream);
 							messageCount = 0;
-							Server.SendPackage(this, package);
+							Server.SendPacket(this, packet);
 						}
-						//else if (!IsSpawned)
-						//{
-						//	SendBuffered(messageCount);
-						//	messageCount = 0;
-						//	Server.SendPackage(this, package);
-						//}
 						else
 						{
 							if (messageCount == 0)
@@ -867,16 +1004,16 @@ namespace MiNET
 								memStream.SetLength(0);
 							}
 
-							byte[] bytes = package.Encode();
+							byte[] bytes = packet.Encode();
 							if (bytes != null)
 							{
 								messageCount++;
-								BatchUtils.WriteLenght(memStream, bytes.Length);
+								BatchUtils.WriteLength(memStream, bytes.Length);
 								//memStream.Write(BitConverter.GetBytes(Endian.SwapInt32(bytes.Length)), 0, 4);
 								memStream.Write(bytes, 0, bytes.Length);
 							}
 
-							package.PutPool();
+							packet.PutPool();
 						}
 					}
 
@@ -898,32 +1035,51 @@ namespace MiNET
 		{
 			if (messageCount == 0) return;
 
-			var batch = BatchUtils.CreateBatchPacket(memStream.GetBuffer(), 0, (int) memStream.Length, CompressionLevel.Fastest, false);
+			var batch = BatchUtils.CreateBatchPacket(new Memory<byte>(memStream.GetBuffer(), 0, (int) memStream.Length), CompressionLevel.Fastest, false);
 			batch.Encode();
 			memStream.Position = 0;
 			memStream.SetLength(0);
 
-			Server.SendPackage(this, batch);
+			Server.SendPacket(this, batch);
 		}
 
-		public void SendDirectPackage(Package package)
+		public void SendDirectPacket(Packet packet)
 		{
-			Server.SendPackage(this, package);
+			Server.SendPacket(this, packet);
 		}
 
 		public IPEndPoint GetClientEndPoint()
 		{
 			return EndPoint;
 		}
+
+		public long GetNetworkNetworkIdentifier()
+		{
+			return NetworkIdentifier;
+		}
 	}
 
 	public class PlayerInfo
 	{
+		public int ADRole { get; set; }
 		public CertificateData CertificateData { get; set; }
 		public string Username { get; set; }
 		public UUID ClientUuid { get; set; }
 		public string ServerAddress { get; set; }
 		public long ClientId { get; set; }
 		public Skin Skin { get; set; }
+		public int CurrentInputMode { get; set; }
+		public int DefaultInputMode { get; set; }
+		public string DeviceModel { get; set; }
+		public string GameVersion { get; set; }
+		public int DeviceOS { get; set; }
+		public int GuiScale { get; set; }
+		public int UIProfile { get; set; }
+		public int Edition { get; set; }
+		public int ProtocolVersion { get; set; }
+		public string LanguageCode { get; set; }
+		public string PlatformChatId { get; set; }
+		public string ThirdPartyName { get; set; }
+		public string TenantId { get; set; }
 	}
 }

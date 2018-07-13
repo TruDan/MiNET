@@ -1,4 +1,5 @@
-﻿using log4net;
+﻿using System;
+using log4net;
 using MiNET.Entities.ImageProviders;
 using MiNET.Net;
 using MiNET.Utils;
@@ -21,16 +22,17 @@ namespace MiNET.Entities.World
 			}
 			else
 			{
-				EntityId = level.EntityManager.AddEntity(null, this) + 0xFFFF;
+				EntityId = level.EntityManager.AddEntity(this) + 0xFFFF;
 			}
 
 			ImageProvider = new MapImageProvider();
+			//ImageProvider = new RandomColorMapImageProvider();
 
 			MapInfo mapInfo = new MapInfo
 			{
 				MapId = EntityId,
 				UpdateType = 6,
-				Direction = 0,
+				Scale = 0,
 				X = 0,
 				Z = 0,
 				Col = 128,
@@ -52,12 +54,28 @@ namespace MiNET.Entities.World
 			// This is a server-side only entity
 		}
 
-		public override void OnTick()
+		public override void OnTick(Entity[] entities)
 		{
 			if (Level.TickTime%2 != 0) return;
 
 			// if no image provider, do nothing
 			if (ImageProvider == null) return;
+
+			MapInfo.Decorators = new MapDecorator[1];
+			for (int i = 0; i < MapInfo.Decorators.Length; i++)
+			{
+				var decorator = new MapDecorator
+				{
+					Rotation = (byte) (Level.TickTime%16),
+					Icon = (byte) 1,
+					X = (byte) (Level.TickTime%255),
+					Z = (byte) (Level.TickTime%255),
+					Label = "",
+					Color = BitConverter.ToUInt32(new byte[] { 0xff, 0xff, 0xff, 0xff }, 0),
+				};
+
+				MapInfo.Decorators[i] = decorator;
+			}
 
 			var data = ImageProvider.GetData(MapInfo, false);
 			if (data != null)
@@ -85,9 +103,6 @@ namespace MiNET.Entities.World
 			{
 				Level.RelayBroadcast(batchPacket);
 			}
-			//Task.Run(delegate
-			//{
-			//});
 		}
 
 		public virtual void AddToMapListeners(Player player, long mapId)
@@ -104,7 +119,7 @@ namespace MiNET.Entities.World
 
 					McpeClientboundMapItemData msg = McpeClientboundMapItemData.CreateObject();
 					msg.mapinfo = mapInfo;
-					player.SendPackage(msg);
+					player.SendPacket(msg);
 
 					return;
 				}
@@ -112,7 +127,7 @@ namespace MiNET.Entities.World
 				var packet = ImageProvider.GetClientboundMapItemData(MapInfo);
 				if (packet != null)
 				{
-					player.SendPackage(packet);
+					player.SendPacket(packet);
 
 					return;
 				}
@@ -120,7 +135,7 @@ namespace MiNET.Entities.World
 				var batchPacket = ImageProvider.GetBatch(MapInfo, true);
 				if (batchPacket != null)
 				{
-					player.SendPackage(batchPacket);
+					player.SendPacket(batchPacket);
 				}
 			}
 		}

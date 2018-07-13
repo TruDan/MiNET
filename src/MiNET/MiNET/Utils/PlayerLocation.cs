@@ -22,6 +22,9 @@ namespace MiNET.Utils
 			X = x;
 			Y = y;
 			Z = z;
+			HeadYaw = headYaw;
+			Yaw = yaw;
+			Pitch = pitch;
 		}
 
 		public PlayerLocation(double x, double y, double z, float headYaw = 0f, float yaw = 0f, float pitch = 0f) : this((float) x, (float) y, (float) z, headYaw, yaw, pitch)
@@ -54,16 +57,26 @@ namespace MiNET.Utils
 			return new Vector3(X, Y, Z);
 		}
 
+		//public Vector3 GetDirection()
+		//{
+		//	double pitch = Pitch.ToRadians();
+		//	double yaw = Yaw.ToRadians();
+		//	double y = -Math.Sin(pitch);
+		//	double xz = Math.Cos(pitch);
+		//	double x = -xz * Math.Sin(yaw);
+		//	double z = xz * Math.Cos(yaw);
+
+		//	return new Vector3((float)x, (float)y, (float)z);
+		//}
+
 		public Vector3 GetDirection()
 		{
 			Vector3 vector = new Vector3();
-
 			double pitch = Pitch.ToRadians();
 			double yaw = Yaw.ToRadians();
-			vector.X = (float) (-Math.Sin(yaw)*Math.Cos(pitch));
-			vector.Y = (float) -Math.Sin(pitch);
-			vector.Z = (float) (Math.Cos(yaw)*Math.Cos(pitch));
-
+			vector.X = (float)(-Math.Sin(yaw) * Math.Cos(pitch));
+			vector.Y = (float)-Math.Sin(pitch);
+			vector.Z = (float)(Math.Cos(yaw) * Math.Cos(pitch));
 			return vector;
 		}
 
@@ -91,6 +104,21 @@ namespace MiNET.Utils
 				b.Pitch);
 		}
 
+		public static implicit operator Vector2(PlayerLocation a)
+		{
+			return new Vector2(a.X, a.Z);
+		}
+
+		public static implicit operator Vector3(PlayerLocation a)
+		{
+			return new Vector3(a.X, a.Y, a.Z);
+		}
+
+		public static implicit operator PlayerLocation(BlockCoordinates v)
+		{
+			return new PlayerLocation(v.X, v.Y, v.Z);
+		}
+
 		public object Clone()
 		{
 			return MemberwiseClone();
@@ -98,7 +126,7 @@ namespace MiNET.Utils
 
 		public override string ToString()
 		{
-			return $"X={X}, Y={Y}, Z={Z}, HeadYaw={HeadYaw}, Yaw={Yaw}, Pich={Pitch}, ";
+			return $"X={X}, Y={Y}, Z={Z}, HeadYaw={HeadYaw}, Yaw={Yaw}, Pich={Pitch}";
 		}
 	}
 }

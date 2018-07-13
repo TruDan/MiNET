@@ -2,10 +2,10 @@ using System;
 
 namespace MiNET.Net
 {
-	public class MessagePart : Package<MessagePart> // Replace this with stream
+	public class MessagePart : Packet<MessagePart> // Replace this with stream
 	{
 		public MessagePartHeader Header { get; private set; }
-		public byte[] Buffer { get; set; }
+		public Memory<byte> Buffer { get; set; }
 		public byte ContainedMessageId { get; set; }
 
 		public MessagePart()
@@ -26,16 +26,16 @@ namespace MiNET.Net
 			Buffer = null;
 		}
 
-		protected override void EncodePackage()
+		protected override void EncodePacket()
 		{
 			// DO NOT CALL base.EncodePackage();
 			_buffer.Position = 0;
 
-			byte[] encodedMessage = Buffer;
+			Memory<byte> encodedMessage = Buffer;
 
 			byte flags = (byte) Header.Reliability;
 			Write((byte) ((flags << 5) | (Header.HasSplit ? Convert.ToByte("00010000", 2) : 0x00)));
-			Write((short) (encodedMessage.Length*8)); // length
+			Write((short) (encodedMessage.Length*8), true); // length
 
 			if (Header.Reliability == Reliability.Reliable
 			    || Header.Reliability == Reliability.ReliableOrdered
@@ -59,9 +59,9 @@ namespace MiNET.Net
 
 			if (Header.HasSplit)
 			{
-				Write(Header.PartCount);
-				Write(Header.PartId);
-				Write(Header.PartIndex);
+				Write(Header.PartCount, true);
+				Write(Header.PartId, true);
+				Write(Header.PartIndex, true);
 			}
 
 			// Message body

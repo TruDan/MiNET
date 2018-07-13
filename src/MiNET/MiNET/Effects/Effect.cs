@@ -1,4 +1,6 @@
-﻿using MiNET.Net;
+﻿using System.Drawing;
+using MiNET.Net;
+using MiNET.Worlds;
 
 namespace MiNET.Effects
 {
@@ -38,6 +40,7 @@ namespace MiNET.Effects
 		public int Duration { get; set; }
 		public int Level { get; set; }
 		public bool Particles { get; set; }
+		public Color ParticleColor { get; set; } = Color.Black;
 
 		protected Effect(EffectType id)
 		{
@@ -48,13 +51,13 @@ namespace MiNET.Effects
 		public virtual void SendAdd(Player player)
 		{
 			var message = McpeMobEffect.CreateObject();
-			message.entityId = 0;
+			message.runtimeEntityId = EntityManager.EntityIdSelf;
 			message.eventId = 1;
-			message.effectId = (byte) EffectId;
+			message.effectId = (int) EffectId;
 			message.duration = Duration;
-			message.amplifier = (byte) Level;
-			message.particles = (byte) (Particles ? 1 : 0);
-			player.SendPackage(message);
+			message.amplifier = Level;
+			message.particles = Particles;
+			player.SendPacket(message);
 
 			player.BroadcastSetEntityData();
 		}
@@ -62,28 +65,28 @@ namespace MiNET.Effects
 		public virtual void SendUpdate(Player player)
 		{
 			var message = McpeMobEffect.CreateObject();
-			message.entityId = 0;
+			message.runtimeEntityId = EntityManager.EntityIdSelf;
 			message.eventId = 2;
-			message.effectId = (byte) EffectId;
+			message.effectId = (int) EffectId;
 			message.duration = Duration;
-			message.amplifier = (byte) Level;
-			message.particles = (byte) (Particles ? 1 : 0);
-			player.SendPackage(message);
+			message.amplifier = Level;
+			message.particles = Particles;
+			player.SendPacket(message);
 		}
 
 		public virtual void SendRemove(Player player)
 		{
 			var message = McpeMobEffect.CreateObject();
-			message.entityId = 0;
+			message.runtimeEntityId = EntityManager.EntityIdSelf;
 			message.eventId = 3;
-			message.effectId = (byte) EffectId;
-			player.SendPackage(message);
+			message.effectId = (int) EffectId;
+			player.SendPacket(message);
 		}
 
 		public virtual void OnTick(Player player)
 		{
 			if (Duration > 0 && Duration != MaxDuration) Duration -= 1;
-			if(Duration < -20) player.RemoveEffect(this); // Need 20 tick grace for some effects that fade
+			if(Duration < 20) player.RemoveEffect(this); // Need 20 tick grace for some effects that fade
 		}
 
 		public override string ToString()

@@ -43,12 +43,16 @@ namespace MiNET
 
 				BlockEntity blockEntity = _level.GetBlockEntity(inventoryCoord);
 
-				if (blockEntity == null) return null;
+				if (blockEntity == null)
+				{
+					if(Log.IsDebugEnabled) Log.Warn($"No blockentity found at {inventoryCoord}");
+					return null;
+				}
 
 				NbtCompound comp = blockEntity.GetCompound();
 
 				Inventory inventory;
-				if (blockEntity is ChestBlockEntity)
+				if (blockEntity is ChestBlockEntity || blockEntity is ShulkerBoxBlockEntity)
 				{
 					inventory = new Inventory(GetInventoryId(), blockEntity, 27, (NbtList) comp["Items"])
 					{
@@ -60,7 +64,7 @@ namespace MiNET
 				{
 					inventory = new Inventory(GetInventoryId(), blockEntity, 2, (NbtList)comp["Items"])
 					{
-						Type = 4,
+						Type = 3,
 						WindowsId = 12,
 					};
 				}
@@ -77,6 +81,7 @@ namespace MiNET
 				}
 				else
 				{
+					if (Log.IsDebugEnabled) Log.Warn($"Block entity did not have a matching inventory {blockEntity}");
 					return null;
 				}
 

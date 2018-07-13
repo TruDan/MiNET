@@ -4,7 +4,7 @@ using MiNET.Utils;
 
 namespace MiNET.Net
 {
-	public class Acks : Package<Acks>
+	public class Acks : Packet<Acks>
 	{
 		public List<int> acks = new List<int>();
 
@@ -19,13 +19,13 @@ namespace MiNET.Net
 			acks.Clear();
 		}
 
-		protected override void EncodePackage()
+		protected override void EncodePacket()
 		{
-			base.EncodePackage();
+			base.EncodePacket();
 
 			List<Tuple<int, int>> ranges = Slize(acks);
 
-			Write((short) ranges.Count);
+			Write((short) ranges.Count, true);
 
 			foreach (var range in ranges)
 			{
@@ -101,7 +101,7 @@ namespace MiNET.Net
 	}
 
 
-	public class Ack : Package<Ack>
+	public class Ack : Packet<Ack>
 	{
 		public List<Tuple<int, int>> ranges = new List<Tuple<int, int>>();
 
@@ -110,15 +110,15 @@ namespace MiNET.Net
 			Id = 0xc0;
 		}
 
-		protected override void DecodePackage()
+		protected override void DecodePacket()
 		{
-            base.DecodePackage();
+			base.DecodePacket();
 
-			if (Id != 0xc0) throw new Exception("Not NAK");
+			if (Id != 0xc0) throw new Exception("Not ACK");
 
 			ranges.Clear();
 
-			short count = ReadShort();
+			short count = ReadShort(true);
 			for (int i = 0; i < count; i++)
 			{
 				var onlyOneSequence = ReadByte();

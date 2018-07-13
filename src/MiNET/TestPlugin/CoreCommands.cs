@@ -1,9 +1,36 @@
+#region LICENSE
+
+// The contents of this file are subject to the Common Public Attribution
+// License Version 1.0. (the "License"); you may not use this file except in
+// compliance with the License. You may obtain a copy of the License at
+// https://github.com/NiclasOlofsson/MiNET/blob/master/LICENSE. 
+// The License is based on the Mozilla Public License Version 1.1, but Sections 14 
+// and 15 have been added to cover use of software over a computer network and 
+// provide for limited attribution for the Original Developer. In addition, Exhibit A has 
+// been modified to be consistent with Exhibit B.
+// 
+// Software distributed under the License is distributed on an "AS IS" basis,
+// WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License for
+// the specific language governing rights and limitations under the License.
+// 
+// The Original Code is MiNET.
+// 
+// The Original Developer is the Initial Developer.  The Initial Developer of
+// the Original Code is Niclas Olofsson.
+// 
+// All portions of the code written by Niclas Olofsson are Copyright (c) 2014-2017 Niclas Olofsson. 
+// All Rights Reserved.
+
+#endregion
+
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO.Compression;
 using System.Linq;
-using System.Net;
+using System.Numerics;
 using System.Reflection;
+using System.Runtime;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -17,23 +44,18 @@ using MiNET.Entities;
 using MiNET.Entities.Passive;
 using MiNET.Items;
 using MiNET.Net;
+using MiNET.Particles;
 using MiNET.Plugins;
 using MiNET.Plugins.Attributes;
+using MiNET.Plugins.Commands;
+using MiNET.UI;
 using MiNET.Utils;
 using MiNET.Worlds;
+using Button = MiNET.UI.Button;
+using Input = MiNET.UI.Input;
 
 namespace TestPlugin
 {
-	public class TestStandaloneHandler
-	{
-		[Command]
-		public void Version2(Player player)
-		{
-			string productVersion = FileVersionInfo.GetVersionInfo(Assembly.GetExecutingAssembly().Location).ProductVersion;
-			player.SendMessage($"MiNET v{productVersion}", type: MessageType.Raw);
-		}
-	}
-
 	[Plugin(PluginName = "CoreCommands", Description = "The core commands for MiNET", PluginVersion = "1.0", Author = "MiNET Team")]
 	public class CoreCommands : Plugin
 	{
@@ -43,14 +65,9 @@ namespace TestPlugin
 
 		protected override void OnEnable()
 		{
-			var instance = new TestStandaloneHandler();
-			Context.PluginManager.LoadCommands(instance);
-			Context.PluginManager.UnloadCommands(instance);
-
-			Context.PluginManager.LoadPacketHandlers(instance);
-			Context.PluginManager.UnloadPacketHandlers(instance);
+			//Context.PluginManager.LoadCommands(new HelpCommand(Context.Server.PluginManager));
+			Context.PluginManager.LoadCommands(new VanillaCommands());
 		}
-
 
 		//[PacketHandler, Receive, UsedImplicitly]
 		//public Package ReceivePacketHandler(Package packet, Player player)
@@ -66,44 +83,336 @@ namespace TestPlugin
 		//    return packet;
 		//}
 
-
-		[Command(Command = "dim")]
-		public void ChangeDimension(Player player)
+		[Command(Name = "tc", Description = "Test command")]
+		public void TestCommand(Player player, int param)
 		{
-			McpeChangeDimension change = McpeChangeDimension.CreateObject();
-			change.dimension = 1;
-			change.unknown = 0;
-			player.SendPackage(change);
 		}
 
-		[Command(Command = "le")]
+		[Command(Name = "gc", Description = "Force garbage collection to run")]
+		public string GarbageCollect(Player player)
+		{
+			var workingSet = Environment.WorkingSet;
+			GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
+			GC.Collect();
+
+			return $"Run GC reclaimed {workingSet - Environment.WorkingSet:N0} bytes of memory";
+		}
+
+		[Command(Name = "metrics on", Description = "Turn metrics on")]
+		[Authorize(Permission = (int) CommandPermission.Admin)]
+		public string MetricsOn(Player player)
+		{
+			player.Level._profiler.Enabled = true;
+			return "Profiler is now enabled.";
+		}
+
+		[Command(Name = "metrics off", Description = "Turn metrics off")]
+		[Authorize(Permission = (int) CommandPermission.Admin)]
+		public string MetricsOff(Player player)
+		{
+			player.Level._profiler.Enabled = false;
+			return "Profiler is now disabled.";
+		}
+
+		[Command(Name = "metrics reset", Description = "Display metrics")]
+		[Authorize(Permission = (int) CommandPermission.Admin)]
+		public string MetricsReset(Player player)
+		{
+			player.Level._profiler.Reset();
+			Log.Debug("Reset profiler");
+			return "Reset profiler";
+		}
+
+		[Command(Name = "metrics display", Description = "Display metrics")]
+		[Authorize(Permission = (int) CommandPermission.Admin)]
+		public string MetricsDisplay(Player player, int timespan = 10000)
+		{
+			string results = player.Level._profiler.GetResults(timespan);
+			Log.Debug("\n" + results);
+			return results;
+		}
+
+		[Command(Description = "Save world")]
+		[Authorize(Permission = (int) CommandPermission.Admin)]
+		public void Save(Player player)
+		{
+			AnvilWorldProvider provider = player.Level.WorldProvider as AnvilWorldProvider;
+			if (provider != null)
+			{
+				provider.SaveChunks();
+			}
+		}
+
+		[Command]
+		public void TestParticles(Player player, int count = 100)
+		{
+			List<McpeLevelEvent> packets = new List<McpeLevelEvent>();
+			BoundingBox box = player.GetBoundingBox() + count;
+			{
+				Level level = player.Level;
+
+				//if ((Math.Abs(box.Width) > 0) || (Math.Abs(box.Height) > 0) || (Math.Abs(box.Depth) > 0))
+				{
+					var minX = Math.Min(box.Min.X, box.Max.X);
+					var maxX = Math.Max(box.Min.X, box.Max.X) + 1;
+
+					var minY = Math.Max(0, Math.Min(box.Min.Y, box.Max.Y));
+					var maxY = Math.Min(255, Math.Max(box.Min.Y, box.Max.Y)) + 1;
+
+					var minZ = Math.Min(box.Min.Z, box.Max.Z);
+					var maxZ = Math.Max(box.Min.Z, box.Max.Z) + 1;
+
+					// x/y
+					for (float x = minX; x <= maxX; x++)
+					{
+						for (float y = minY; y <= maxY; y++)
+						{
+							foreach (var z in new float[] {minZ, maxZ})
+							{
+								if (!level.IsAir(new BlockCoordinates((int) x, (int) y, (int) z))) continue;
+
+								//var particle = new Particle(particleId, Player.Level) {Position = new Vector3(x, y, z) + new Vector3(0.5f, 0.5f, 0.5f)};
+								//var particle = new Particle(10, level) {Position = new Vector3(x, y, z)};
+								//particle.Spawn(new[] {player});
+
+								McpeLevelEvent particleEvent = McpeLevelEvent.CreateObject();
+								particleEvent.eventId = (short)(0x4000 | 10);
+								particleEvent.position = new Vector3(x, y, z);
+								particleEvent.data = 0;
+								packets.Add(particleEvent);
+							}
+						}
+					}
+
+					// x/z
+					//for (float x = minX; x <= maxX; x++)
+					//{
+					//	foreach (var y in new float[] {minY, maxY})
+					//	{
+					//		for (float z = minZ; z <= maxZ; z++)
+					//		{
+					//			if (!level.IsAir(new BlockCoordinates((int) x, (int) y, (int) z))) continue;
+
+					//			//var particle = new Particle(10, Player.Level) {Position = new Vector3(x, y, z) + new Vector3(0.5f, 0.5f, 0.5f)};
+					//			var particle = new Particle(10, Player.Level) {Position = new Vector3(x, y, z)};
+					//			particle.Spawn(new[] {Player});
+					//		}
+					//	}
+					//}
+
+					// z/y
+					foreach (var x in new float[] {minX, maxX})
+					{
+						for (float y = minY; y <= maxY; y++)
+						{
+							for (float z = minZ; z <= maxZ; z++)
+							{
+								if (!level.IsAir(new BlockCoordinates((int) x, (int) y, (int) z))) continue;
+
+								//var particle = new Particle(10, Player.Level) {Position = new Vector3(x, y, z) + new Vector3(0.5f, 0.5f, 0.5f)};
+								//var particle = new Particle(10, level) {Position = new Vector3(x, y, z)};
+								//particle.Spawn(new[] {player});
+
+								McpeLevelEvent particleEvent = McpeLevelEvent.CreateObject();
+								particleEvent.eventId = (short)(0x4000 | 10);
+								particleEvent.position = new Vector3(x, y, z);
+								particleEvent.data = 0;
+								packets.Add(particleEvent);
+							}
+						}
+					}
+				}
+			}
+
+			var packet = BatchUtils.CreateBatchPacket(CompressionLevel.Fastest, packets.ToArray());
+			player.SendPacket(packet);
+		}
+
+		[Command]
+		public void SpawnAgent(Player player, string text)
+		{
+			Agent agent = new Agent(player.Level);
+			agent.KnownPosition = (PlayerLocation) player.KnownPosition.Clone();
+			agent.Owner = player;
+			agent.NameTag = text;
+			agent.SpawnEntity();
+		}
+
+		[Command]
+		public void SpawnNpc(Player player, string text)
+		{
+			Npc npc = new Npc(player.Level);
+			npc.KnownPosition = (PlayerLocation) player.KnownPosition.Clone();
+			npc.NameTag = text;
+			npc.SpawnEntity();
+		}
+
+		public static PlayerLocation GetPositionFromPlayer(PlayerLocation coordinates, float distance = 2f, bool facePlayer = true)
+		{
+			var direction = Vector3.Normalize(coordinates.GetHeadDirection())*distance;
+			return new PlayerLocation(coordinates.X + direction.X, coordinates.Y, coordinates.Z + direction.Z, facePlayer ? coordinates.HeadYaw + 180f : coordinates.HeadYaw, facePlayer ? coordinates.Yaw + 180f : coordinates.Yaw);
+		}
+
+		[Command]
+		public void SpawnHologram(Player player, string text)
+		{
+			var hologram = new Hologram(text, player.Level);
+			hologram.KnownPosition =
+				hologram.KnownPosition = GetPositionFromPlayer(player.KnownPosition);
+			hologram.SpawnEntity();
+		}
+
+		[Command]
+		public string Info(Player player)
+		{
+			var level = player.Level;
+			int entityCount = level.Entities.Count;
+
+			string body = $"Entity #{entityCount}";
+			return body;
+		}
+
+		[Command]
+		public void Relight(Player player)
+		{
+			BlockCoordinates pos = player.KnownPosition.GetCoordinates3D();
+			pos.Y -= 1;
+
+			var block = player.Level.GetBlock(pos);
+			Glowstone gold = new Glowstone();
+			gold.Coordinates = block.Coordinates;
+			player.Level.SetBlock(gold);
+			Thread.Sleep(100);
+			player.Level.SetBlock(block);
+		}
+
+		[Command]
+		public void Form(Player player)
+		{
+			CustomForm customForm = new CustomForm();
+			customForm.Title = "A title";
+			customForm.Content = new List<CustomElement>()
+			{
+				new Label {Text = "A label"},
+				new Input {Text = "", Placeholder = "Placeholder", Value = ""},
+				new Toggle {Text = "A toggler", Value = true},
+				new Slider {Text = "A slider", Min = 0, Max = 10, Step = 0.1f, Value = 3},
+				new StepSlider {Text = "A step slider", Steps = new List<string>() {"Step 1", "Step 2", "Step 3"}, Value = 1},
+				new Dropdown {Text = "A dropdown", Options = new List<string>() {"Option 1", "Option 2", "Option 3"}, Value = 1},
+			};
+
+			player.SendForm(customForm);
+		}
+
+		[Command]
+		public void FormModal(Player player)
+		{
+			var modalForm = new ModalForm();
+			modalForm.Title = "A title";
+			modalForm.Content = "A bit of content";
+			modalForm.Button1 = "Button 1";
+			modalForm.Button2 = "Button 2";
+
+			player.SendForm(modalForm);
+		}
+
+		[Command]
+		public void FormSimple(Player player)
+		{
+			var simpleForm = new SimpleForm();
+			simpleForm.Title = "A title";
+			simpleForm.Content = "A bit of content";
+			simpleForm.Buttons = new List<Button>()
+			{
+				new Button {Text = "Button 1", Image = new Image {Type = "url", Url = "https://i.imgur.com/SedU2Ad.png"}},
+				new Button {Text = "Button 2", Image = new Image {Type = "url", Url = "https://i.imgur.com/oBMg5H3.png"}},
+				new Button {Text = "Button 3", Image = new Image {Type = "url", Url = "https://i.imgur.com/hMAfqQd.png"}},
+				new Button {Text = "Close"},
+			};
+
+			player.SendForm(simpleForm);
+		}
+
+		[Command]
+		public void Minet(Player player, string commands, string done, string gurun, string made, string it)
+		{
+		}
+
+		[Command(Aliases = new[] {"resend"})]
+		public void ResendChunks(Player player)
+		{
+			Task.Run(() =>
+			{
+				player.CleanCache();
+				player.ForcedSendChunks(() => { player.SendMessage($"Resent chunks."); });
+			});
+		}
+
+		[Command(Aliases = new[] {"cslc"})]
+		public void CalculateSkyLightForChunk(Player player)
+		{
+			Task.Run(() =>
+			{
+				Stopwatch sw = new Stopwatch();
+				var level = player.Level;
+				ChunkColumn chunk = level.GetChunk((BlockCoordinates) player.KnownPosition);
+				sw.Start();
+				new SkyLightCalculations().RecalcSkyLight(chunk, level);
+				sw.Stop();
+				player.CleanCache();
+				player.ForcedSendChunks(() => { player.SendMessage($"Calculated skylights ({sw.ElapsedMilliseconds}ms) and resent chunks."); });
+			});
+		}
+
+		[Command(Aliases = new[] {"csl"})]
+		public void CalculateSkyLight(Player player)
+		{
+			Task.Run(() =>
+			{
+				SkyLightCalculations.Calculate(player.Level);
+				player.CleanCache();
+				player.ForcedSendChunks(() => { player.SendMessage("Calculated skylights and resent chunks."); });
+			});
+		}
+
+		[Command(Aliases = new[] {"cbl"})]
+		public void CalculateBlockLight(Player player)
+		{
+			Task.Run(() =>
+			{
+				LevelManager.RecalculateBlockLight(player.Level, (AnvilWorldProvider) player.Level.WorldProvider);
+				player.CleanCache();
+				player.ForcedSendChunks(() => { player.SendMessage("Calculated blocklights and resent chunks."); });
+			});
+		}
+
+
+		[Command(Name = "le")]
 		public void LevelEvent(Player player, short value)
 		{
 			LevelEvent(player, value, 0);
 		}
 
-		[Command(Command = "le")]
+		[Command(Name = "le")]
 		public void LevelEvent(Player player, short value, int data)
 		{
 			McpeLevelEvent levelEvent = McpeLevelEvent.CreateObject();
 			levelEvent.eventId = value;
 			levelEvent.data = data;
-			levelEvent.x = player.KnownPosition.X;
-			levelEvent.y = player.KnownPosition.Y;
-			levelEvent.z = player.KnownPosition.Z;
+			levelEvent.position = player.KnownPosition.ToVector3();
 			player.Level.RelayBroadcast(levelEvent);
 
 			player.Level.BroadcastMessage($"Sent level event {value}", type: MessageType.Raw);
 		}
 
-		[Command(Command = "td")]
+		[Command(Name = "td")]
 		public void ToggleDownfall(Player player, int value)
 		{
 			{
 				McpeLevelEvent levelEvent = McpeLevelEvent.CreateObject();
 				levelEvent.eventId = 3001;
 				levelEvent.data = value;
-				player.SendPackage(levelEvent);
+				player.SendPacket(levelEvent);
 			}
 			player.SendMessage("Downfall " + value, type: MessageType.Raw);
 		}
@@ -120,7 +429,7 @@ namespace TestPlugin
 						McpeLevelEvent levelEvent = McpeLevelEvent.CreateObject();
 						levelEvent.eventId = 3001;
 						levelEvent.data = data;
-						player.SendPackage(levelEvent);
+						player.SendPacket(levelEvent);
 					}
 					//{
 					//	McpeLevelEvent levelEvent = McpeLevelEvent.CreateObject();
@@ -137,7 +446,7 @@ namespace TestPlugin
 						McpeLevelEvent levelEvent = McpeLevelEvent.CreateObject();
 						levelEvent.eventId = 3001;
 						levelEvent.data = i;
-						player.SendPackage(levelEvent);
+						player.SendPacket(levelEvent);
 					}
 					//{
 					//	McpeLevelEvent levelEvent = McpeLevelEvent.CreateObject();
@@ -170,7 +479,7 @@ namespace TestPlugin
 		[Command]
 		public void Version(Player player)
 		{
-			string productVersion = FileVersionInfo.GetVersionInfo(Assembly.GetExecutingAssembly().Location).ProductVersion;
+			string productVersion = FileVersionInfo.GetVersionInfo(Assembly.GetAssembly(typeof(MiNetServer)).Location).ProductVersion;
 			player.SendMessage($"MiNET v{productVersion}", type: MessageType.Raw);
 		}
 
@@ -199,64 +508,71 @@ namespace TestPlugin
 		}
 
 		[Command]
+		public void Portal(Player player)
+		{
+			int width = 4;
+			int height = 5;
+
+			int x = (int) player.KnownPosition.X - width/2;
+			int y = (int) player.KnownPosition.Y - 1;
+			int z = (int) player.KnownPosition.Z + 1;
+
+			PortalInfo portal = new PortalInfo();
+			portal.Coordinates = new BlockCoordinates(x, y, z);
+			portal.Size = new BoundingBox(portal.Coordinates, portal.Coordinates + new BlockCoordinates(4, 5, 3));
+			Player.BuildPortal(player.Level, portal);
+		}
+
+		[Command]
+		public void ReadTest(Player player)
+		{
+			int width = 128;
+			int height = player.Level.Dimension == Dimension.Overworld ? 256 : 128;
+
+
+			Stopwatch sw = new Stopwatch();
+			sw.Start();
+			Level level = player.Level;
+			int blockId = new Portal().Id;
+			BlockCoordinates start = (BlockCoordinates) player.KnownPosition;
+			for (int x = start.X - width; x < start.X + width; x++)
+			{
+				for (int z = start.Z - width; z < start.Z + width; z++)
+				{
+					for (int y = height - 1; y >= 0; y--)
+					{
+						var b = level.IsBlock(new BlockCoordinates(x, y, z), blockId);
+						if (b) Log.Warn("Found portal block");
+					}
+				}
+			}
+			sw.Stop();
+
+			player.SendMessage($"Read blocks in {sw.ElapsedMilliseconds}ms");
+		}
+
+
+		[Command]
 		public void Orb(Player player1)
 		{
 			foreach (Player player in player1.Level.Players.Values)
 			{
 				// 128 = 32 + 32 + 32
 				var msg = McpeSpawnExperienceOrb.CreateObject();
-				msg.x = (int) (player1.KnownPosition.X + 1);
-				msg.y = (int) (player1.KnownPosition.Y + 2);
-				msg.z = (int) (player1.KnownPosition.Z + 1);
+				msg.position = player1.KnownPosition.ToVector3() + new Vector3(1, 2, 1);
 				msg.count = 10;
 				player.Level.RelayBroadcast(msg);
 			}
 		}
 
-		[Command(Command = "gm")]
-		//[Authorize(Users = "gurun")]
-		//[Authorize(Users = "gurunx")]
-		public void GameMode(Player player, int gameMode)
-		{
-			player.SetGameMode((GameMode) gameMode);
-
-			player.Level.BroadcastMessage($"{player.Username} changed to game mode {(GameMode) gameMode}.", type: MessageType.Raw);
-		}
-
-
-		[Command(Command = "tp")]
-		public void Teleport(Player player, int x, int y, int z)
-		{
-			ThreadPool.QueueUserWorkItem(delegate(object state)
-			{
-				player.Teleport(new PlayerLocation
-				{
-					X = x,
-					Y = y,
-					Z = z,
-					Yaw = 91,
-					Pitch = 28,
-					HeadYaw = 91
-				});
-			}, null);
-
-			player.Level.BroadcastMessage(string.Format("{0} teleported to coordinates {1},{2},{3}.", player.Username, x, y, z), type: MessageType.Raw);
-		}
-
-		[Command(Command = "tp")]
-		public void Teleport(Player player)
-		{
-			Teleport(player, "Default");
-		}
-
-		[Command(Command = "tp")]
-		public void Teleport(Player player, string world)
+		[Command(Name = "dim", Aliases = new[] {"dimension"}, Description = "Change dimension. Creates world if not exist.")]
+		public void ChangeDimenion(Player player, Dimension dimension)
 		{
 			Level oldLevel = player.Level;
 
-			if (player.Level.LevelId.Equals(world))
+			if (player.Level.Dimension == dimension)
 			{
-				Teleport(player, (int) player.SpawnPosition.X, (int) player.SpawnPosition.Y, (int) player.SpawnPosition.Z);
+				player.Teleport(player.SpawnPosition);
 				return;
 			}
 
@@ -267,28 +583,70 @@ namespace TestPlugin
 
 			ThreadPool.QueueUserWorkItem(delegate(object state)
 			{
-				Level[] levels = state as Level[];
+				player.PortalDetected = -1;
+				player.ChangeDimension(null, null, dimension, delegate
+				{
+					Level nextLevel = dimension == Dimension.Overworld ? oldLevel.OverworldLevel : dimension == Dimension.Nether ? oldLevel.NetherLevel : oldLevel.TheEndLevel;
+					return nextLevel;
+				});
+
+				oldLevel.BroadcastMessage(string.Format("{0} teleported to world {1}.", player.Username, player.Level.LevelId), type: MessageType.Raw);
+			}, Context.LevelManager);
+		}
+
+		[Command(Name = "tpw", Aliases = new[] {"teleport"}, Description = "Teleports player to default world.")]
+		public void TeleportWorld(Player player)
+		{
+			TeleportWorld(player, "Default");
+		}
+
+		private object _levelSync = new object();
+
+		[Command(Name = "tpw", Aliases = new[] {"teleport"}, Description = "Teleports player to given world. Creates world if not exist.")]
+		public void TeleportWorld(Player player, string world)
+		{
+			Level oldLevel = player.Level;
+
+			if (player.Level.LevelId.Equals(world))
+			{
+				player.Teleport(player.SpawnPosition);
+				return;
+			}
+
+			if (!Context.LevelManager.Levels.Contains(player.Level))
+			{
+				Context.LevelManager.Levels.Add(player.Level);
+			}
+
+			ThreadPool.QueueUserWorkItem(delegate(object state)
+			{
+				LevelManager levelManager = state as LevelManager;
+				if (levelManager == null) return;
+
+				Level[] levels = levelManager.Levels.ToArray();
 
 				if (levels != null)
 				{
 					player.SpawnLevel(null, null, true, delegate
 					{
-						Level nextLevel = levels.FirstOrDefault(l => l.LevelId != null && l.LevelId.Equals(world));
-
-						if (nextLevel == null)
+						lock (levelManager.Levels)
 						{
-							nextLevel = new Level(world, new FlatlandWorldProvider(), player.GameMode, Difficulty.Normal);
-							nextLevel.Initialize();
-							Context.LevelManager.Levels.Add(nextLevel);
+							Level nextLevel = levels.FirstOrDefault(l => l.LevelId != null && l.LevelId.Equals(world));
+
+							if (nextLevel == null)
+							{
+								nextLevel = new Level(levelManager, world, new AnvilWorldProvider() {MissingChunkProvider = new SuperflatGenerator(Dimension.Overworld)}, Context.LevelManager.EntityManager, player.GameMode, Difficulty.Normal);
+								nextLevel.Initialize();
+								Context.LevelManager.Levels.Add(nextLevel);
+							}
+
+							oldLevel.BroadcastMessage(string.Format("{0} teleported to world {1}.", player.Username, player.Level.LevelId), type: MessageType.Raw);
+
+							return nextLevel;
 						}
-
-						return nextLevel;
 					});
-
-					oldLevel.BroadcastMessage(string.Format("{0} teleported to world {1}.", player.Username, player.Level.LevelId), type: MessageType.Raw);
-
 				}
-			}, Context.LevelManager.Levels.ToArray());
+			}, Context.LevelManager);
 		}
 
 		[Command]
@@ -303,27 +661,27 @@ namespace TestPlugin
 			Clear(target);
 		}
 
-		[Command(Command = "vd")]
+		[Command(Name = "vd")]
 		public void ViewDistance(Player player)
 		{
 			player.Level.BroadcastMessage(string.Format("Current view distance set to {0}.", player.Level.ViewDistance), type: MessageType.Raw);
 		}
 
-		[Command(Command = "vd")]
+		[Command(Name = "vd")]
 		public void ViewDistance(Player player, int viewDistance)
 		{
 			player.Level.ViewDistance = viewDistance;
 			player.Level.BroadcastMessage(string.Format("View distance changed to {0}.", player.Level.ViewDistance), type: MessageType.Raw);
 		}
 
-		[Command(Command = "twitter")]
+		[Command(Name = "twitter")]
 		public void Twitter(Player player)
 		{
 			player.Level.BroadcastMessage("§6Twitter @NiclasOlofsson", type: MessageType.Raw);
-			player.Level.BroadcastMessage("§5twitch.tv/niclasolofsson", type: MessageType.Raw);
+			player.Level.BroadcastMessage("§5twitch.tv/gurunx", type: MessageType.Raw);
 		}
 
-		[Command(Command = "pi")]
+		[Command(Name = "pi")]
 		public void PlayerInfo(Player player)
 		{
 			player.SendMessage(string.Format("Username={0}", player.Username), type: MessageType.Raw);
@@ -332,7 +690,7 @@ namespace TestPlugin
 			player.SendMessage(string.Format("Client ID={0}", player.ClientUuid), type: MessageType.Raw);
 		}
 
-		[Command(Command = "pos")]
+		[Command(Name = "pos")]
 		public void Position(Player player)
 		{
 			BlockCoordinates position = new BlockCoordinates(player.KnownPosition);
@@ -340,17 +698,17 @@ namespace TestPlugin
 			int chunkX = position.X >> 4;
 			int chunkZ = position.Z >> 4;
 
-			int xi = (chunkX%32);
-			if (xi < 0) xi += 32;
-			int zi = (chunkZ%32);
-			if (zi < 0) zi += 32;
+			int xi = position.X & 0x0f;
+			int zi = position.Z & 0x0f;
 
 			StringBuilder sb = new StringBuilder();
-			sb.AppendLine(string.Format("Region X:{0} Z:{1}", chunkX >> 5, chunkZ >> 5));
-			sb.AppendLine(string.Format("Local chunk X:{0} Z:{1}", xi, zi));
-			sb.AppendLine(string.Format("Chunk X:{0} Z:{1}", chunkX, chunkZ));
-			sb.AppendLine(string.Format("Position X:{0:F1} Y:{1:F1} Z:{2:F1}", player.KnownPosition.X, player.KnownPosition.Y, player.KnownPosition.Z));
-			sb.AppendLine(string.Format("Direction Yaw:{0:F1} HeadYap:{1:F1} Pitch:{2:F1}", player.KnownPosition.Yaw, player.KnownPosition.HeadYaw, player.KnownPosition.Pitch));
+			sb.AppendLine($"Position X={player.KnownPosition.X:F1} Y={player.KnownPosition.Y:F1} Z={player.KnownPosition.Z:F1}");
+			sb.AppendLine($"Direction Yaw={player.KnownPosition.Yaw:F1} HeadYap={player.KnownPosition.HeadYaw:F1} Pitch={player.KnownPosition.Pitch:F1}");
+			sb.AppendLine($"Region X={chunkX >> 5} Z={chunkZ >> 5}");
+			sb.AppendLine($"Chunk X={chunkX} Z={chunkZ}");
+			sb.AppendLine($"Local coordinates X={xi} Z={zi}");
+			sb.AppendLine($"Local coordinates X={xi} Z={zi}");
+			sb.AppendLine($"Height={player.Level.GetHeight(position)}");
 			string text = sb.ToString();
 
 			player.SendMessage(text, type: MessageType.Raw);
@@ -358,28 +716,23 @@ namespace TestPlugin
 		}
 
 		[Command]
-		public void Spawn(Player player, byte id)
+		public void Permission(Player player, int permission)
 		{
-			Level level = player.Level;
-
-			Mob entity = new Mob(id, level)
-			{
-				KnownPosition = player.KnownPosition,
-				//Data = -(blockId | 0 << 0x10)
-			};
-			entity.SpawnEntity();
+			player.CommandPermission = permission;
+			player.SendAdventureSettings();
 		}
 
+
 		[Command]
-		public void SpawnHologram(Player player, byte id)
+		public void Spawn(Player player, int entityId)
 		{
 			Level level = player.Level;
 
-			Mob entity = new Mob(id, level)
+			var entity = new Entity(entityId, level)
 			{
 				KnownPosition = player.KnownPosition,
-				//Data = -(blockId | 0 << 0x10)
 			};
+
 			entity.SpawnEntity();
 		}
 
@@ -405,27 +758,47 @@ namespace TestPlugin
 			player.StrikeLightning();
 		}
 
-		[Command(Command = "si")]
+		[Command(Name = "si")]
 		public void SendInventory(Player player)
 		{
 			player.SendPlayerInventory();
 		}
 
-		[Command(Command = "sp")]
+		[Command(Name = "sp")]
 		public void SetSpawn(Player player)
 		{
 			player.SpawnPosition = (PlayerLocation) player.KnownPosition.Clone();
 			player.SendSetSpawnPosition();
 			player.Level.BroadcastMessage($"{player.Username} set new spawn position.", type: MessageType.Raw);
-			player.HealthManager.Kill();
-			player.SendStartGame();
-			player.SendPlayerInventory();
 		}
 
 		[Command]
 		public void Ignite(Player player)
 		{
 			player.HealthManager.Ignite();
+		}
+
+		[Command]
+		public void FarmingKit(Player player)
+		{
+			var inventory = player.Inventory;
+
+			var command = new ItemCommand(41, 0, delegate(ItemCommand itemCommand, Level level, Player arg3, BlockCoordinates arg4) { Log.Info("Clicked on command"); });
+
+			byte c = 0;
+			inventory.Slots[c++] = new ItemDiamondHoe();
+			inventory.Slots[c++] = new ItemBucket(8) {Count = 1};
+			inventory.Slots[c++] = new ItemWheatSeeds() {Count = 64};
+			inventory.Slots[c++] = new ItemBeetrootSeeds() {Count = 64};
+			inventory.Slots[c++] = new ItemCarrot() {Count = 64};
+			inventory.Slots[c++] = new ItemPotato() {Count = 64};
+
+
+			player.SendPlayerInventory();
+			SendEquipmentForPlayer(player);
+			SendArmorForPlayer(player);
+
+			player.Level.BroadcastMessage(string.Format("Player {0} changed kit.", player.Username), type: MessageType.Raw);
 		}
 
 		[Command]
@@ -479,8 +852,7 @@ namespace TestPlugin
 			// 4 = Projectile protection
 			// 5 = Thorns
 
-
-			EnchantArmor(player.Inventory, 0, 2);
+			EnchantArmor(player.Inventory, (short) EnchantingType.FireProtection, 7);
 
 
 			var command = new ItemCommand(41, 0, delegate(ItemCommand itemCommand, Level level, Player arg3, BlockCoordinates arg4) { Log.Info("Clicked on command"); });
@@ -494,21 +866,69 @@ namespace TestPlugin
 			//	TAG_String("map_uuid"): "-4294967268"
 			//}
 
-			//inventory.Slots[c++] = new ItemItemFrame() { Count = 64 };
-			inventory.Slots[c++] = new ItemBlock(new Planks(), 0) { Count = 64 };
+			inventory.Slots[c++] = new ItemBow() {ExtraData = new NbtCompound {new NbtList("ench") {new NbtCompound {new NbtShort("id", 19), new NbtShort("lvl", 4)}}}}; // Bow
+			inventory.Slots[c++] = new ItemIronSword
+			{
+				ExtraData = new NbtCompound
+				{
+					new NbtList("ench")
+					{
+						new NbtCompound {new NbtShort("id", (short) EnchantingType.Knockback), new NbtShort("lvl", 1)}
+					}
+				}
+			};
+			inventory.Slots[c++] = new ItemIronSword
+			{
+				ExtraData = new NbtCompound
+				{
+					new NbtList("ench")
+					{
+						new NbtCompound {new NbtShort("id", (short) EnchantingType.Knockback), new NbtShort("lvl", 2)}
+					}
+				}
+			};
+			inventory.Slots[c++] = new ItemIronSword
+			{
+				ExtraData = new NbtCompound
+				{
+					new NbtList("ench")
+					{
+						new NbtCompound {new NbtShort("id", (short) EnchantingType.Knockback), new NbtShort("lvl", 3)}
+					}
+				}
+			};
+			inventory.Slots[c++] = new ItemIronSword
+			{
+				ExtraData = new NbtCompound
+				{
+					new NbtList("ench")
+					{
+						new NbtCompound {new NbtShort("id", (short) EnchantingType.Knockback), new NbtShort("lvl", 4)}
+					}
+				}
+			};
+			inventory.Slots[c++] = new ItemBlock(new EnchantingTable(), 0) { Count = 64 };
+			inventory.Slots[c++] = ItemFactory.GetItem(351, 4, 64);
+			inventory.Slots[c++] = new ItemBlock(new Planks(), 0) {Count = 64};
 			inventory.Slots[c++] = new ItemCompass(); // Wooden Sword
 			inventory.Slots[c++] = new ItemWoodenSword(); // Wooden Sword
 			inventory.Slots[c++] = new ItemStoneSword(); // Stone Sword
-			inventory.Slots[c++] = new ItemGoldSword(); // Golden Sword
+			inventory.Slots[c++] = new ItemGoldenSword(); // Golden Sword
 			inventory.Slots[c++] = new ItemIronSword(); // Iron Sword
 			inventory.Slots[c++] = new ItemDiamondSword(); // Diamond Sword
-			inventory.Slots[c++] = new ItemBow(); // Bow
 			inventory.Slots[c++] = new ItemArrow {Count = 64}; // Arrows
 			inventory.Slots[c++] = new ItemEgg {Count = 64}; // Eggs
 			inventory.Slots[c++] = new ItemSnowball {Count = 64}; // Snowballs
 			inventory.Slots[c++] = new ItemIronSword
 			{
-				ExtraData = new NbtCompound {new NbtList("ench") {new NbtCompound {new NbtShort("id", 9), new NbtShort("lvl", 1)}}}
+				ExtraData = new NbtCompound
+				{
+					new NbtList("ench")
+					{
+						new NbtCompound {new NbtShort("id", (short) EnchantingType.FireAspect), new NbtShort("lvl", 1)},
+						new NbtCompound {new NbtShort("id", (short) EnchantingType.Knockback), new NbtShort("lvl", 1)}
+					}
+				}
 			};
 
 			inventory.Slots[c++] = new ItemIronSword
@@ -573,8 +993,8 @@ namespace TestPlugin
 			var inventory = player.Inventory;
 
 			byte c = 0;
-			inventory.Slots[c++] = new ItemFurnace() {Count = 64}; // Custom command block
-			inventory.Slots[c++] = new ItemCoal() {Count = 64}; // Custom command block
+			inventory.Slots[c++] = new ItemBlock(new Furnace(), 0) {Count = 64}; // Custom command block
+			inventory.Slots[c++] = new ItemCoal {Count = 64}; // Custom command block
 			inventory.Slots[c++] = new ItemBlock(new IronOre(), 0) {Count = 64}; // Custom command block
 
 			player.SendPlayerInventory();
@@ -588,7 +1008,7 @@ namespace TestPlugin
 		private void SendEquipmentForPlayer(Player player)
 		{
 			var msg = McpeMobEquipment.CreateObject();
-			msg.entityId = player.EntityId;
+			msg.runtimeEntityId = player.EntityId;
 			msg.item = player.Inventory.GetItemInHand();
 			msg.slot = 0;
 			player.Level.RelayBroadcast(msg);
@@ -597,7 +1017,7 @@ namespace TestPlugin
 		private void SendArmorForPlayer(Player player)
 		{
 			var armorEquipment = McpeMobArmorEquipment.CreateObject();
-			armorEquipment.entityId = player.EntityId;
+			armorEquipment.runtimeEntityId = player.EntityId;
 			armorEquipment.helmet = player.Inventory.Helmet;
 			armorEquipment.chestplate = player.Inventory.Chest;
 			armorEquipment.leggings = player.Inventory.Leggings;
@@ -606,6 +1026,26 @@ namespace TestPlugin
 		}
 
 		[Command]
+		public void StringTest(Player player, string str1, string str2)
+		{
+		}
+
+		[Command]
+		public void OptionalTest(Player player, int x, int y, int z, int rot = 0)
+		{
+		}
+
+		[Command]
+		public void EnumTest(Player player, ItemTypeEnum itemType, EntityTypeEnum entityType, BlockTypeEnum blockType, CommandNameEnum commandName)
+		{
+		}
+
+		[Command]
+		public void EnumTest2(Player player, EnchantEnum enchant, EffectEnum effect)
+		{
+		}
+
+		[Command(Description = "Fly command")]
 		public void Fly(Player player)
 		{
 			if (player.AllowFly)
@@ -620,7 +1060,7 @@ namespace TestPlugin
 			}
 		}
 
-		[Command(Command = "xporb")]
+		[Command(Name = "xporb")]
 		public void ExperienceOrb(Player player)
 		{
 			Mob xpOrb = new Mob(69, player.Level);
@@ -628,7 +1068,7 @@ namespace TestPlugin
 			xpOrb.SpawnEntity();
 		}
 
-		[Command(Command = "e")]
+		[Command(Name = "e")]
 		public void Effect(Player player, string effect)
 		{
 			if ("clear".Equals(effect, StringComparison.InvariantCultureIgnoreCase))
@@ -638,13 +1078,13 @@ namespace TestPlugin
 			}
 		}
 
-		[Command(Command = "e")]
+		[Command(Name = "e")]
 		public void Effect(Player player, string effect, int level)
 		{
 			Effect(player, effect, level, MiNET.Effects.Effect.MaxDuration);
 		}
 
-		[Command(Command = "e")]
+		[Command(Name = "e")]
 		public void Effect(Player player, string effect, int level, int duration)
 		{
 			if ("clear".Equals(effect, StringComparison.InvariantCultureIgnoreCase))
@@ -743,17 +1183,16 @@ namespace TestPlugin
 			}
 		}
 
-		[Command(Command = "nd")]
+		[Command(Name = "nd")]
 		public void NoDamage(Player player)
 		{
 			player.HealthManager = player.HealthManager is NoDamageHealthManager ? new HealthManager(player) : new NoDamageHealthManager(player);
 			player.SendUpdateAttributes();
-			player.SendMessage($"{player.Username} set NoDamage={player.HealthManager is NoDamageHealthManager}", type: McpeText.TypeRaw);
+			player.SendMessage($"{player.Username} set NoDamage={player.HealthManager is NoDamageHealthManager}", type: MessageType.Raw);
 		}
 
-		[Command(Command = "r")]
-		[Authorize(Users = "gurun")]
-		[Authorize(Users = "gurunx")]
+		[Command(Name = "r")]
+		//[Authorize(Permission = UserPermission.Op)]
 		public void DisplayRestartNotice(Player currentPlayer)
 		{
 			var players = currentPlayer.Level.GetSpawnedPlayers();
@@ -761,25 +1200,40 @@ namespace TestPlugin
 			{
 				player.AddPopup(new Popup()
 				{
-					Priority = 100, MessageType = MessageType.Tip, Message = "SERVER WILL RESTART!", Duration = 20*10,
+					Priority = 100,
+					MessageType = MessageType.Tip,
+					Message = "SERVER WILL RESTART!",
+					Duration = 20*10,
 				});
 
 				player.AddPopup(new Popup()
 				{
-					Priority = 100, MessageType = MessageType.Popup, Message = "Transfering all players!", Duration = 20*10,
+					Priority = 100,
+					MessageType = MessageType.Popup,
+					Message = "Transfering all players!",
+					Duration = 20*10,
 				});
+			}
+
+			foreach (var player in players)
+			{
+				McpeTransfer transfer = McpeTransfer.CreateObject();
+				transfer.serverAddress = "yodamine.com";
+				transfer.port = 19132;
+				player.SendPacket(transfer);
 			}
 		}
 
 		private byte _invId = 0;
 
-		[Command(Command = "oi")]
-		public void OpenInventory(Player player)
+		[Command(Name = "oci")]
+		public void OpenChestInventory(Player player)
 		{
 			BlockCoordinates coor = new BlockCoordinates(player.KnownPosition);
 			Chest chest = new Chest
 			{
-				Coordinates = coor, Metadata = 0
+				Coordinates = coor,
+				Metadata = 0
 			};
 			player.Level.SetBlock(chest, true);
 
@@ -802,7 +1256,7 @@ namespace TestPlugin
 			for (int i = 0; i < 10; i++)
 			{
 				Pig pig = new Pig(player.Level);
-				pig.KnownPosition = (PlayerLocation)player.KnownPosition.Clone();
+				pig.KnownPosition = (PlayerLocation) player.KnownPosition.Clone();
 				pig.SpawnEntity();
 				pigs.Add(pig);
 			}
@@ -810,7 +1264,7 @@ namespace TestPlugin
 
 			Thread.Sleep(4000);
 
-			PlayerLocation loc = (PlayerLocation)player.KnownPosition.Clone();
+			PlayerLocation loc = (PlayerLocation) player.KnownPosition.Clone();
 			loc.Y = loc.Y + 10;
 			loc.X = loc.X + 10;
 			loc.Z = loc.Z + 10;
@@ -821,7 +1275,7 @@ namespace TestPlugin
 
 			foreach (var pig in pigs)
 			{
-				pig.KnownPosition = (PlayerLocation)loc.Clone();
+				pig.KnownPosition = (PlayerLocation) loc.Clone();
 				pig.LastUpdatedTime = DateTime.UtcNow;
 			}
 
@@ -831,7 +1285,7 @@ namespace TestPlugin
 		[Command]
 		public void Test2(Player player)
 		{
-			PlayerLocation pos = (PlayerLocation)player.KnownPosition.Clone();
+			PlayerLocation pos = (PlayerLocation) player.KnownPosition.Clone();
 			Task.Run(() =>
 			{
 				for (int i = 0; i < 100; i++)
@@ -842,9 +1296,14 @@ namespace TestPlugin
 					Thread.Sleep(100);
 				}
 			});
-
-
 		}
+
+		[Command]
+		public void Title(Player player, string text, TitleType type)
+		{
+			player.SendTitle(text, type);
+		}
+
 
 		[Command]
 		public void Count(Player player)
@@ -862,5 +1321,185 @@ namespace TestPlugin
 			player.SendMessage($"There are {users.Count} of players online.");
 		}
 
+		[Command]
+		public string Worldborder(Player player, int radius = 200, bool centerOnPlayer = false)
+		{
+			Level level = player.Level;
+
+			BlockCoordinates center = (BlockCoordinates) level.SpawnPoint;
+			if (centerOnPlayer) center = (BlockCoordinates) player.KnownPosition;
+			center.Y = 0;
+
+			var players = level.GetSpawnedPlayers();
+
+			for (int y = 0; y < 256; y++)
+			{
+				for (int x = -radius; x <= radius; x++)
+				{
+					for (int z = -radius; z <= radius; z++)
+					{
+						if (x != -radius && x != radius && z != -radius && z != radius) continue;
+
+						var block = new Glass() {Coordinates = center + new BlockCoordinates(x, y, z)};
+						level.SetBlock(block, false, false, false);
+
+						List<Player> sendList = new List<Player>();
+						foreach (var p in players)
+						{
+							if (p.KnownPosition.DistanceTo(center + new BlockCoordinates(x, (int) p.KnownPosition.Y, z)) > p.ChunkRadius*16) continue;
+
+							sendList.Add(p);
+						}
+
+						var message = McpeUpdateBlock.CreateObject();
+						message.blockRuntimeId = block.GetRuntimeId();
+						message.coordinates = block.Coordinates;
+						message.blockPriority = 0xb;
+						level.RelayBroadcast(sendList.ToArray(), message);
+					}
+				}
+			}
+			return $"Added world border with radius of {radius} around {center}";
+		}
+
+		[Command]
+		public string Test()
+		{
+			return "Test";
+		}
+
+		[Command]
+		public void GeneratePath(Player player)
+		{
+			Level level = player.Level;
+			Vector3 pos = player.KnownPosition;
+
+			int n = 20;
+
+			RandomCurve ycurve = new RandomCurve(n, 0, 80, 0.1);
+			RandomCurve zcurve = new RandomCurve(n, 0, 100, 0.1);
+
+			bool first = true;
+			for (int x = 0; x < n; x++)
+			{
+				var y = ycurve.GetY(x);
+				var z = zcurve.GetY(x);
+
+				GeneratePortal(level, pos + new Vector3(x*42, (float) y, (float) z), first, x == n - 1);
+				first = false;
+			}
+		}
+
+		private void GeneratePortal(Level level, BlockCoordinates coord, bool isStart = false, bool isLast = false)
+		{
+			Block block = isStart ? (Block) new DiamondBlock() : isLast ? (Block) new EmeraldBlock() : new GoldBlock();
+
+			int[,] coords = new[,]
+			{
+				{0, 0}, {0, 1}, {0, 2}, {0, 3}, {0, 4}, {0, 0},
+				{1, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {1, 5},
+				{2, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {2, 5},
+				{3, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {3, 5},
+				{4, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {4, 5},
+				{5, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {5, 5},
+				{0, 0}, {6, 1}, {6, 2}, {6, 3}, {6, 4}, {6, 5},
+			};
+
+			for (int i = 0; i < coords.Length/2; i++)
+			{
+				Log.Warn($"Lenght {coords.Length}");
+				block.Coordinates = coord + new BlockCoordinates(0, coords[i, 0], coords[i, 1]);
+				level.SetBlock(block);
+			}
+		}
+	}
+
+
+	internal struct SineWave
+	{
+		internal readonly double Amplitude;
+		internal readonly double OrdinaryFrequency;
+		internal readonly double AngularFrequency;
+		internal readonly double Phase;
+		internal readonly double ShiftY;
+
+		internal SineWave(double amplitude, double ordinaryFrequency, double phase, double shiftY)
+		{
+			Amplitude = amplitude;
+			OrdinaryFrequency = ordinaryFrequency;
+			AngularFrequency = 2*Math.PI*ordinaryFrequency;
+			Phase = phase;
+			ShiftY = shiftY;
+		}
+	}
+
+	public class RandomCurve
+	{
+		private SineWave[] m_sineWaves;
+
+		public RandomCurve(int components, double minY, double maxY, double flatness)
+		{
+			m_sineWaves = new SineWave[components];
+
+			double totalPeakToPeakAmplitude = maxY - minY;
+			double averagePeakToPeakAmplitude = totalPeakToPeakAmplitude/components;
+
+			int prime = 1;
+			Random r = new Random();
+			for (int i = 0; i < components; i++)
+			{
+				// from 0.5 to 1.5 of averagePeakToPeakAmplitude 
+				double peakToPeakAmplitude = averagePeakToPeakAmplitude*(r.NextDouble() + 0.5d);
+
+				// peak amplitude is a hald of peak-to-peak amplitude
+				double amplitude = peakToPeakAmplitude/2d;
+
+				// period should be a multiple of the prime number to avoid regularities
+				prime = Utils.GetNextPrime(prime);
+				double period = flatness*prime;
+
+				// ordinary frequency is reciprocal of period
+				double ordinaryFrequency = 1d/period;
+
+				// random phase
+				double phase = 2*Math.PI*(r.NextDouble() + 0.5d);
+
+				// shiftY is the same as amplitude
+				double shiftY = amplitude;
+
+				m_sineWaves[i] =
+					new SineWave(amplitude, ordinaryFrequency, phase, shiftY);
+			}
+		}
+
+		public double GetY(double x)
+		{
+			double y = 0;
+			for (int i = 0; i < m_sineWaves.Length; i++)
+				y += m_sineWaves[i].Amplitude*Math.Sin(m_sineWaves[i].AngularFrequency*x + m_sineWaves[i].Phase) + m_sineWaves[i].ShiftY;
+
+			return y;
+		}
+	}
+
+	internal static class Utils
+	{
+		internal static int GetNextPrime(int i)
+		{
+			int nextPrime = i + 1;
+			for (; !IsPrime(nextPrime); nextPrime++) ;
+			return nextPrime;
+		}
+
+		private static bool IsPrime(int number)
+		{
+			if (number == 1) return false;
+			if (number == 2) return true;
+
+			for (int i = 2; i < number; ++i)
+				if (number%i == 0) return false;
+
+			return true;
+		}
 	}
 }

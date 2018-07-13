@@ -7,7 +7,11 @@ using MiNET.Utils;
 
 namespace MiNET
 {
-	public class Inventory
+	public interface IInventory
+	{
+	}
+
+	public class Inventory : IInventory
 	{
 		public event Action<Player, Inventory, byte, Item> InventoryChange;
 
@@ -115,8 +119,7 @@ namespace MiNET
 
 		protected virtual void OnInventoryChange(Player player, byte slot, Item itemStack)
 		{
-			Action<Player, Inventory, byte, Item> handler = InventoryChange;
-			if (handler != null) handler(player, this, slot, itemStack);
+			InventoryChange?.Invoke(player, this, slot, itemStack);
 		}
 
 

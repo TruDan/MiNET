@@ -13,7 +13,7 @@ namespace MiNET.Entities.ImageProviders
 
 		public virtual byte[] GetData(MapInfo mapInfo, bool forced)
 		{
-			return GenerateColors(mapInfo, (byte) _random.NextInt(255));
+			return GenerateColors(mapInfo, (byte) _random.Next(255));
 		}
 
 		public virtual McpeClientboundMapItemData GetClientboundMapItemData(MapInfo mapInfo)
@@ -21,7 +21,7 @@ namespace MiNET.Entities.ImageProviders
 			return null;
 		}
 
-		public virtual McpeBatch GetBatch(MapInfo mapInfo, bool forced)
+		public virtual McpeWrapper GetBatch(MapInfo mapInfo, bool forced)
 		{
 			return null;
 		}
@@ -35,9 +35,9 @@ namespace MiNET.Entities.ImageProviders
 			{
 				for (byte x = 0; x < map.Row; x++)
 				{
-					bytes[i++] = (byte) _random.NextInt(255); // R
-					bytes[i++] = (byte) _random.NextInt(255); // G
-					bytes[i++] = (byte) _random.NextInt(255); // B
+					bytes[i++] = (byte) _random.Next(255); // R
+					bytes[i++] = (byte) _random.Next(255); // G
+					bytes[i++] = (byte) _random.Next(255); // B
 					bytes[i++] = 0xff; // A
 				}
 			}
