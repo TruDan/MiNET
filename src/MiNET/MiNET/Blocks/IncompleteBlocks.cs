@@ -1,6 +1,8 @@
-﻿namespace MiNET.Blocks
+﻿using MiNET.Items;
+
+namespace MiNET.Blocks
 {
-	public class AcaciaButton : Block
+	public class AcaciaButton : Button
 	{
 		public AcaciaButton() : base(395)
 		{
@@ -23,7 +25,7 @@
 			// runtime id: 4236 0x108C, data: 15
 		}
 	}
-	public class AcaciaPressurePlate : Block
+	public class AcaciaPressurePlate : WoodenPressurePlate
 	{
 		public AcaciaPressurePlate() : base(405)
 		{
@@ -46,7 +48,7 @@
 			// runtime id: 4396 0x112C, data: 15
 		}
 	}
-	public class AcaciaTrapdoor : Block
+	public class AcaciaTrapdoor : Trapdoor
 	{
 		public AcaciaTrapdoor() : base(400)
 		{
@@ -69,7 +71,7 @@
 			// runtime id: 4316 0x10DC, data: 15
 		}
 	}
-	public class BirchButton : Block
+	public class BirchButton : Button
 	{
 		public BirchButton() : base(396)
 		{
@@ -92,7 +94,7 @@
 			// runtime id: 4252 0x109C, data: 15
 		}
 	}
-	public class BirchPressurePlate : Block
+	public class BirchPressurePlate : WoodenPressurePlate
 	{
 		public BirchPressurePlate() : base(406)
 		{
@@ -115,7 +117,7 @@
 			// runtime id: 4412 0x113C, data: 15
 		}
 	}
-	public class BirchTrapdoor : Block
+	public class BirchTrapdoor : Trapdoor
 	{
 		public BirchTrapdoor() : base(401)
 		{
@@ -143,7 +145,14 @@
 		public BlueIce() : base(266)
 		{
 			Name = "minecraft:blue_ice";
+			LightLevel = 1; // Gives light, however it is unknown.
+			BlastResistance = 14;
 			// runtime id: 2199 0x897, data: 0
+		}
+
+		public override Item[] GetDrops(Item tool)
+		{
+			return new Item[0];
 		}
 	}
 	public class BoneBlock : Block
@@ -151,6 +160,7 @@
 		public BoneBlock() : base(216)
 		{
 			Name = "minecraft:bone_block";
+			BlastResistance = 10;
 			// runtime id: 1861 0x745, data: 0
 			// runtime id: 1862 0x746, data: 1
 			// runtime id: 1863 0x747, data: 2
@@ -174,6 +184,7 @@
 		public BubbleColumn() : base(415)
 		{
 			Name = "minecraft:bubble_column";
+			IsTransparent = true;
 			// runtime id: 4490 0x118A, data: 0
 			// runtime id: 4491 0x118B, data: 1
 		}
@@ -183,6 +194,9 @@
 		public CarvedPumpkin() : base(410)
 		{
 			Name = "minecraft:carved_pumpkin";
+			IsTransparent = true;
+			IsBlockingSkylight = true;
+			BlastResistance = 5;
 			// runtime id: 4461 0x116D, data: 0
 			// runtime id: 4462 0x116E, data: 1
 			// runtime id: 4463 0x116F, data: 2
@@ -194,6 +208,8 @@
 		public ChainCommandBlock() : base(189)
 		{
 			Name = "minecraft:chain_command_block";
+			BlastResistance = 18000000;
+			Hardness = -1;
 			// runtime id: 1656 0x678, data: 0
 			// runtime id: 1657 0x679, data: 1
 			// runtime id: 1658 0x67A, data: 2
@@ -211,6 +227,11 @@
 			// runtime id: 1670 0x686, data: 14
 			// runtime id: 1671 0x687, data: 15
 		}
+
+		public override Item[] GetDrops(Item tool)
+		{
+			return new Item[0];
+		}
 	}
 	public class ChemicalHeat : Block
 	{
@@ -225,6 +246,7 @@
 		public ChemistryTable() : base(238)
 		{
 			Name = "minecraft:chemistry_table";
+			BlastResistance = 10;
 			// runtime id: 2053 0x805, data: 0
 			// runtime id: 2054 0x806, data: 1
 			// runtime id: 2055 0x807, data: 2
@@ -243,7 +265,7 @@
 			// runtime id: 2068 0x814, data: 15
 		}
 	}
-	public class ColoredTorchBp : Block
+	public class ColoredTorchBp : Torch
 	{
 		public ColoredTorchBp() : base(204)
 		{
@@ -266,7 +288,7 @@
 			// runtime id: 1842 0x732, data: 15
 		}
 	}
-	public class ColoredTorchRg : Block
+	public class ColoredTorchRg : Torch
 	{
 		public ColoredTorchRg() : base(202)
 		{
@@ -294,6 +316,8 @@
 		public CommandBlock() : base(137)
 		{
 			Name = "minecraft:command_block";
+			BlastResistance = 18000000;
+			Hardness = -1;
 			// runtime id: 1060 0x424, data: 0
 			// runtime id: 1061 0x425, data: 1
 			// runtime id: 1062 0x426, data: 2
@@ -317,6 +341,9 @@
 		public Conduit() : base(412)
 		{
 			Name = "minecraft:conduit";
+			LightLevel = 15;
+			BlastResistance = 15;
+			Hardness = 3;
 			// runtime id: 4473 0x1179, data: 0
 		}
 	}
@@ -325,6 +352,7 @@
 		public Coral() : base(386)
 		{
 			Name = "minecraft:coral";
+			IsTransparent = true;
 			// runtime id: 4092 0xFFC, data: 0
 			// runtime id: 4093 0xFFD, data: 1
 			// runtime id: 4094 0xFFE, data: 2
@@ -348,6 +376,7 @@
 		public CoralBlock() : base(387)
 		{
 			Name = "minecraft:coral_block";
+			BlastResistance = 30;
 			// runtime id: 4108 0x100C, data: 0
 			// runtime id: 4109 0x100D, data: 1
 			// runtime id: 4110 0x100E, data: 2
@@ -371,6 +400,7 @@
 		public CoralFan() : base(388)
 		{
 			Name = "minecraft:coral_fan";
+			IsTransparent = true;
 			// runtime id: 4124 0x101C, data: 0
 			// runtime id: 4125 0x101D, data: 1
 			// runtime id: 4126 0x101E, data: 2
@@ -394,6 +424,7 @@
 		public CoralFanDead() : base(389)
 		{
 			Name = "minecraft:coral_fan_dead";
+			IsTransparent = true;
 			// runtime id: 4140 0x102C, data: 0
 			// runtime id: 4141 0x102D, data: 1
 			// runtime id: 4142 0x102E, data: 2
@@ -417,6 +448,7 @@
 		public CoralFanHang() : base(390)
 		{
 			Name = "minecraft:coral_fan_hang";
+			IsTransparent = true;
 			// runtime id: 4156 0x103C, data: 0
 			// runtime id: 4157 0x103D, data: 1
 			// runtime id: 4158 0x103E, data: 2
@@ -440,6 +472,7 @@
 		public CoralFanHang2() : base(391)
 		{
 			Name = "minecraft:coral_fan_hang2";
+			IsTransparent = true;
 			// runtime id: 4172 0x104C, data: 0
 			// runtime id: 4173 0x104D, data: 1
 			// runtime id: 4174 0x104E, data: 2
@@ -463,6 +496,7 @@
 		public CoralFanHang3() : base(392)
 		{
 			Name = "minecraft:coral_fan_hang3";
+			IsTransparent = true;
 			// runtime id: 4188 0x105C, data: 0
 			// runtime id: 4189 0x105D, data: 1
 			// runtime id: 4190 0x105E, data: 2
@@ -481,7 +515,7 @@
 			// runtime id: 4203 0x106B, data: 15
 		}
 	}
-	public class DarkOakButton : Block
+	public class DarkOakButton : Button
 	{
 		public DarkOakButton() : base(397)
 		{
@@ -504,7 +538,7 @@
 			// runtime id: 4268 0x10AC, data: 15
 		}
 	}
-	public class DarkOakPressurePlate : Block
+	public class DarkOakPressurePlate : WoodenPressurePlate
 	{
 		public DarkOakPressurePlate() : base(407)
 		{
@@ -527,7 +561,7 @@
 			// runtime id: 4428 0x114C, data: 15
 		}
 	}
-	public class DarkOakTrapdoor : Block
+	public class DarkOakTrapdoor : Trapdoor
 	{
 		public DarkOakTrapdoor() : base(402)
 		{
@@ -555,6 +589,7 @@
 		public DriedKelpBlock() : base(394)
 		{
 			Name = "minecraft:dried_kelp_block";
+			BlastResistance = 12.5f;
 			// runtime id: 4220 0x107C, data: 0
 		}
 	}
@@ -3318,7 +3353,7 @@
 			// runtime id: 1403 0x57B, data: 15
 		}
 	}
-	public class HardGlass : Block
+	public class HardGlass : Glass
 	{
 		public HardGlass() : base(253)
 		{
@@ -3326,7 +3361,7 @@
 			// runtime id: 2133 0x855, data: 0
 		}
 	}
-	public class HardGlassPane : Block
+	public class HardGlassPane : GlassPane
 	{
 		public HardGlassPane() : base(190)
 		{
@@ -3334,7 +3369,7 @@
 			// runtime id: 1672 0x688, data: 0
 		}
 	}
-	public class HardStainedGlass : Block
+	public class HardStainedGlass : StainedGlass
 	{
 		public HardStainedGlass() : base(254)
 		{
@@ -3357,7 +3392,7 @@
 			// runtime id: 2149 0x865, data: 15
 		}
 	}
-	public class HardStainedGlassPane : Block
+	public class HardStainedGlassPane : StainedGlassPane
 	{
 		public HardStainedGlassPane() : base(191)
 		{
@@ -3396,7 +3431,7 @@
 			// runtime id: 2107 0x83B, data: 0
 		}
 	}
-	public class JungleButton : Block
+	public class JungleButton : Button
 	{
 		public JungleButton() : base(398)
 		{
@@ -3419,7 +3454,7 @@
 			// runtime id: 4284 0x10BC, data: 15
 		}
 	}
-	public class JunglePressurePlate : Block
+	public class JunglePressurePlate : WoodenPressurePlate
 	{
 		public JunglePressurePlate() : base(408)
 		{
@@ -3442,7 +3477,7 @@
 			// runtime id: 4444 0x115C, data: 15
 		}
 	}
-	public class JungleTrapdoor : Block
+	public class JungleTrapdoor : Trapdoor
 	{
 		public JungleTrapdoor() : base(403)
 		{
@@ -3470,6 +3505,7 @@
 		public Kelp() : base(393)
 		{
 			Name = "minecraft:kelp";
+			IsTransparent = true;
 			// runtime id: 4204 0x106C, data: 0
 			// runtime id: 4205 0x106D, data: 1
 			// runtime id: 4206 0x106E, data: 2
@@ -3493,6 +3529,8 @@
 		public Magma() : base(213)
 		{
 			Name = "minecraft:magma";
+			LightLevel = 3;
+			BlastResistance = 2.5f;
 			// runtime id: 1858 0x742, data: 0
 		}
 	}
@@ -3501,6 +3539,7 @@
 		public Movingblock() : base(250)
 		{
 			Name = "minecraft:movingBlock";
+			IsTransparent = true;
 			// runtime id: 2108 0x83C, data: 0
 		}
 	}
@@ -3509,6 +3548,7 @@
 		public NetherWartBlock() : base(214)
 		{
 			Name = "minecraft:nether_wart_block";
+			BlastResistance = 5;
 			// runtime id: 1859 0x743, data: 0
 		}
 	}
@@ -3517,6 +3557,8 @@
 		public Netherreactor() : base(247)
 		{
 			Name = "minecraft:netherreactor";
+			LightLevel = 15;
+			BlastResistance = 30;
 			// runtime id: 2105 0x839, data: 0
 		}
 	}
@@ -3525,6 +3567,8 @@
 		public Pistonarmcollision() : base(34)
 		{
 			Name = "minecraft:pistonArmCollision";
+			IsTransparent = true;
+			BlastResistance = 2.5f;
 			// runtime id: 252 0xFC, data: 0
 			// runtime id: 253 0xFD, data: 1
 			// runtime id: 254 0xFE, data: 2
@@ -3540,6 +3584,7 @@
 		public RedNetherBrick() : base(215)
 		{
 			Name = "minecraft:red_nether_brick";
+			BlastResistance = 30;
 			// runtime id: 1860 0x744, data: 0
 		}
 	}
@@ -3548,6 +3593,8 @@
 		public RepeatingCommandBlock() : base(188)
 		{
 			Name = "minecraft:repeating_command_block";
+			BlastResistance = 18000000;
+			Hardness = -1;
 			// runtime id: 1640 0x668, data: 0
 			// runtime id: 1641 0x669, data: 1
 			// runtime id: 1642 0x66A, data: 2
@@ -3565,6 +3612,11 @@
 			// runtime id: 1654 0x676, data: 14
 			// runtime id: 1655 0x677, data: 15
 		}
+
+		public override Item[] GetDrops(Item tool)
+		{
+			return new Item[0];
+		}
 	}
 	public class Reserved6 : Block
 	{
@@ -3579,6 +3631,7 @@
 		public SeaPickle() : base(411)
 		{
 			Name = "minecraft:sea_pickle";
+			LightLevel = 6;
 			// runtime id: 4465 0x1171, data: 0
 			// runtime id: 4466 0x1172, data: 1
 			// runtime id: 4467 0x1173, data: 2
@@ -3594,13 +3647,14 @@
 		public Seagrass() : base(385)
 		{
 			Name = "minecraft:seagrass";
+			IsTransparent = true;
 			// runtime id: 4088 0xFF8, data: 0
 			// runtime id: 4089 0xFF9, data: 1
 			// runtime id: 4090 0xFFA, data: 2
 			// runtime id: 4091 0xFFB, data: 3
 		}
 	}
-	public class SpruceButton : Block
+	public class SpruceButton : Button
 	{
 		public SpruceButton() : base(399)
 		{
@@ -3623,7 +3677,7 @@
 			// runtime id: 4300 0x10CC, data: 15
 		}
 	}
-	public class SprucePressurePlate : Block
+	public class SprucePressurePlate : WoodenPressurePlate
 	{
 		public SprucePressurePlate() : base(409)
 		{
@@ -3646,7 +3700,7 @@
 			// runtime id: 4460 0x116C, data: 15
 		}
 	}
-	public class SpruceTrapdoor : Block
+	public class SpruceTrapdoor : Trapdoor
 	{
 		public SpruceTrapdoor() : base(404)
 		{
@@ -3669,7 +3723,7 @@
 			// runtime id: 4380 0x111C, data: 15
 		}
 	}
-	public class StrippedAcaciaLog : Block
+	public class StrippedAcaciaLog : Log2
 	{
 		public StrippedAcaciaLog() : base(263)
 		{
@@ -3680,7 +3734,7 @@
 			// runtime id: 2190 0x88E, data: 3
 		}
 	}
-	public class StrippedBirchLog : Block
+	public class StrippedBirchLog : Log2
 	{
 		public StrippedBirchLog() : base(261)
 		{
@@ -3691,7 +3745,7 @@
 			// runtime id: 2182 0x886, data: 3
 		}
 	}
-	public class StrippedDarkOakLog : Block
+	public class StrippedDarkOakLog : Log2
 	{
 		public StrippedDarkOakLog() : base(264)
 		{
@@ -3702,7 +3756,7 @@
 			// runtime id: 2194 0x892, data: 3
 		}
 	}
-	public class StrippedJungleLog : Block
+	public class StrippedJungleLog : Log2
 	{
 		public StrippedJungleLog() : base(262)
 		{
@@ -3713,7 +3767,7 @@
 			// runtime id: 2186 0x88A, data: 3
 		}
 	}
-	public class StrippedOakLog : Block
+	public class StrippedOakLog : Log2
 	{
 		public StrippedOakLog() : base(265)
 		{
@@ -3724,7 +3778,7 @@
 			// runtime id: 2198 0x896, data: 3
 		}
 	}
-	public class StrippedSpruceLog : Block
+	public class StrippedSpruceLog : Log2
 	{
 		public StrippedSpruceLog() : base(260)
 		{
@@ -3740,6 +3794,8 @@
 		public StructureBlock() : base(252)
 		{
 			Name = "minecraft:structure_block";
+			BlastResistance = 18000000;
+			Hardness = -1;
 			// runtime id: 2125 0x84D, data: 0
 			// runtime id: 2126 0x84E, data: 1
 			// runtime id: 2127 0x84F, data: 2
@@ -3773,7 +3829,7 @@
 			// runtime id: 4489 0x1189, data: 15
 		}
 	}
-	public class UnderwaterTorch : Block
+	public class UnderwaterTorch : Torch
 	{
 		public UnderwaterTorch() : base(239)
 		{

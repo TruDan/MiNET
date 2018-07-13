@@ -35,7 +35,7 @@ namespace MiNET.Blocks
 		{
 		}
 
-		public Trapdoor(byte id) : base(id)
+		public Trapdoor(int id) : base(id)
 		{
 			IsTransparent = true;
 			BlastResistance = 15;

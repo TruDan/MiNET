@@ -2,7 +2,9 @@
 {
 	public class WoodenPressurePlate : Block
 	{
-		public WoodenPressurePlate() : base(72)
+		public WoodenPressurePlate() : this(72) { }
+		
+		protected WoodenPressurePlate(int id) : base(id)
 		{
 			IsTransparent = true;
 			IsSolid = false;

@@ -2,7 +2,9 @@
 {
 	public class GlassPane : Block
 	{
-		public GlassPane() : base(102)
+		public GlassPane() : this(102) { }
+		
+		protected GlassPane(int id) : base(id)
 		{
 			IsTransparent = true;
 			BlastResistance = 1.5f;

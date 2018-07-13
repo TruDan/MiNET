@@ -2,7 +2,9 @@
 {
 	public class StainedGlass : Glass
 	{
-		public StainedGlass() : base(241)
+		public StainedGlass() : this(241) { }
+
+		protected StainedGlass(int id) : base(id)
 		{
 			IsTransparent = true;
 			BlastResistance = 1.5f;

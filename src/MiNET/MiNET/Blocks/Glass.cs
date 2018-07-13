@@ -6,7 +6,7 @@
 		{
 			
 		}
-		public Glass(byte id) : base(id)
+		public Glass(int id) : base(id)
 		{
 			IsTransparent = true;
 			BlastResistance = 1.5f;

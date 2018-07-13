@@ -4,7 +4,9 @@ namespace MiNET.Blocks
 {
 	public class StainedGlassPane : Block
 	{
-		public StainedGlassPane() : base(160)
+		public StainedGlassPane() : this(160) { }
+
+		protected StainedGlassPane(int id) : base(id)
 		{
 			IsTransparent = true; // I should hope so at least
 			BlastResistance = 1.5f;

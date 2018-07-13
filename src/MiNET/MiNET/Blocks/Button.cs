@@ -8,7 +8,7 @@ namespace MiNET.Blocks
 	{
 		public int TickRate { get; set; }
 
-		protected Button(byte id) : base(id)
+		protected Button(int id) : base(id)
 		{
 			IsSolid = false;
 			IsTransparent = true;

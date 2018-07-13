@@ -10,11 +10,15 @@ namespace MiNET.Blocks
 	{
 		private static readonly ILog Log = LogManager.GetLogger(typeof (Torch));
 
-		public Torch() : base(50)
+		public Torch() : this(50)
+		{
+		}
+
+		protected Torch(int id) : base(id)
 		{
 			IsTransparent = true;
-			IsSolid = false;
-			LightLevel = 14;
+			IsSolid       = false;
+			LightLevel    = 14;
 		}
 
 		//protected override bool CanPlace(Level world, BlockCoordinates blockCoordinates, BlockFace face)
